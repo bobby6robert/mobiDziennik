@@ -1,4 +1,4 @@
-"""Czujniki mobiDziennika (format zgodny z kartami Vultron/Aurora)."""
+"""Czujniki mobiDziennika (zgodne z Aurora / Vultron dashboard)."""
 from __future__ import annotations
 
 from datetime import date
@@ -63,7 +63,7 @@ class PlanSensor(_Base):
     @property
     def native_value(self) -> int:
         today = date.today().isoformat()
-        return sum(1 for l in self._d.lessons if l["d"] == today)
+        return sum(1 for l in self._d.lessons if l.get("d") == today)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -136,6 +136,8 @@ class StatusSensor(_Base):
             "ocen": len(self._d.grades),
             "wiadomosci_liczba": len(self._d.messages),
             "sprawdziany_liczba": len(self._d.exams),
+            "frekwencja_liczba": len(self._d.attendance),
+            "uwagi_liczba": len(self._d.remarks),
         }
 
 
