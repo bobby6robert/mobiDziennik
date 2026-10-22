@@ -15,14 +15,20 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import MobiCoordinator
 from .const import CONF_STUDENT, DOMAIN
 
-HEAVY = frozenset({"lekcje", "oceny", "wiadomosci", "bledy"})
+HEAVY = frozenset({"lekcje", "oceny", "wiadomosci", "bledy", "sprawdziany", "frekwencja", "uwagi"})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback) -> None:
     coord: MobiCoordinator = hass.data[DOMAIN][entry.entry_id]
     add([
-        PlanSensor(coord, entry), MessagesSensor(coord, entry), GradesSensor(coord, entry),
-        LuckySensor(coord, entry), StatusSensor(coord, entry),
+        PlanSensor(coord, entry),
+        MessagesSensor(coord, entry),
+        GradesSensor(coord, entry),
+        LuckySensor(coord, entry),
+        StatusSensor(coord, entry),
+        ExamsSensor(coord, entry),
+        AttendanceSensor(coord, entry),
+        RemarksSensor(coord, entry),
     ])
 
 
@@ -123,5 +129,53 @@ class StatusSensor(_Base):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"last_update": self._d.last_update, "bledy": self._d.errors,
-                "lekcji": len(self._d.lessons), "ocen": len(self._d.grades), "wiadomosci_liczba": len(self._d.messages)}
+        return {
+            "last_update": self._d.last_update,
+            "bledy": self._d.errors,
+            "lekcji": len(self._d.lessons),
+            "ocen": len(self._d.grades),
+            "wiadomosci_liczba": len(self._d.messages),
+            "sprawdziany_liczba": len(self._d.exams),
+        }
+
+
+class ExamsSensor(_Base):
+    def __init__(self, c, e):
+        super().__init__(c, e, "sprawdziany", "Sprawdziany", "mdi:file-document-edit-outline")
+        self._attr_native_unit_of_measurement = "zapowiedzianych"
+
+    @property
+    def native_value(self) -> int:
+        return len(self._d.exams)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"last_update": self._d.last_update, "sprawdziany": self._d.exams}
+
+
+class AttendanceSensor(_Base):
+    def __init__(self, c, e):
+        super().__init__(c, e, "frekwencja", "Frekwencja", "mdi:account-check-outline")
+        self._attr_native_unit_of_measurement = "wpisów"
+
+    @property
+    def native_value(self) -> int:
+        return len(self._d.attendance)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"last_update": self._d.last_update, "frekwencja": self._d.attendance}
+
+
+class RemarksSensor(_Base):
+    def __init__(self, c, e):
+        super().__init__(c, e, "uwagi", "Uwagi i pochwały", "mdi:comment-alert-outline")
+        self._attr_native_unit_of_measurement = "uwag"
+
+    @property
+    def native_value(self) -> int:
+        return len(self._d.remarks)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"last_update": self._d.last_update, "uwagi": self._d.remarks}
