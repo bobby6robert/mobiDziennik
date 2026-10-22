@@ -225,7 +225,7 @@ class MobiDziennikClient:
             ("oceny", f"/dziennik/oceny?semestr={semester}"),
             ("wiadomosci", "/dziennik/wiadomosci"),
             ("sprawdziany", "/dziennik/sprawdziany"),
-            ("frekwencja", "/dziennik/frekwencja"),
+            ("frekwencja", "/dziennik/obecnosci"),
             ("uwagi", "/dziennik/uwagi"),
         ):
             try:
@@ -419,7 +419,6 @@ def parse_exams(text: str) -> list[dict[str, Any]]:
             col3 = _text(cols[3])
             col4 = _text(cols[4]) if len(cols) > 4 else ""
 
-            # Jeśli kolumna 1 zawiera klasę (np. '1 a'), schochodzimy o jeden w prawo
             if re.match(r"^\d+\s*[a-z]?$", col1, re.I):
                 out.append({
                     "data": dt,
@@ -439,29 +438,44 @@ def parse_exams(text: str) -> list[dict[str, Any]]:
 
 
 def parse_attendance(text: str) -> list[dict[str, Any]]:
-    """Parser dla frekwencji ze strony /dziennik/frekwencja."""
+    """Parser dla frekwencji (nieobecności / spóźnienia) ze strony /dziennik/obecnosci."""
     soup = BeautifulSoup(text, "html.parser")
     out: list[dict[str, Any]] = []
 
-    for el in soup.select(".frekwencja_wpis, .absent, .late, tr.podswietl"):
-        cols = [c.get_text(" ", strip=True) for c in el.find_all("td")]
-        if len(cols) >= 3 and "Data" not in cols[0]:
-            out.append({
-                "data": _text(cols[0]),
-                "godzina": _text(cols[1]),
-                "status": _text(cols[2]),
-                "przedmiot": _text(cols[3]) if len(cols) > 3 else "",
-            })
-
-    if not out:
-        for span in soup.select("span.bad_attendance, span.spoznienie, span.nieobecnosc"):
-            parent = span.find_parent("tr") or span.find_parent("div")
-            if parent:
+    # Iterujemy po głównych wierszach z datami nieobecności
+    rows = soup.select("tr.podswietl")
+    for row in rows:
+        tds = row.find_all("td")
+        if not tds:
+            continue
+        data_str = _text(tds[0].get_text())
+        
+        # Następny wiersz zawiera szczegóły (zagnieżdżoną tabelę z lekcjami)
+        next_row = row.find_next_sibling("tr")
+        if not next_row:
+            continue
+            
+        sub_table = next_row.find("table", class_="spis")
+        if not sub_table:
+            continue
+            
+        for sub_tr in sub_table.find_all("tr"):
+            sub_tds = sub_tr.find_all("td")
+            if len(sub_tds) >= 4:
+                godzina = _text(sub_tds[0].get_text())
+                przedmiot = _text(sub_tds[1].get_text())
+                nauczyciel = _text(sub_tds[2].get_text())
+                
+                # Pobieramy status z atrybutu alt obrazka (np. "Nieobecność nieusprawiedliwiona")
+                img = sub_tds[3].find("img")
+                status = img.get("alt", "Nieobecność") if img else "Nieobecność"
+                
                 out.append({
-                    "data": date.today().isoformat(),
-                    "godzina": "-",
-                    "status": _text(span.get_text()),
-                    "przedmiot": _text(parent.get_text())[:40],
+                    "data": data_str,
+                    "godzina": godzina,
+                    "status": status,
+                    "przedmiot": przedmiot,
+                    "nauczyciel": nauczyciel,
                 })
     return out
 
