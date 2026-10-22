@@ -1,0 +1,19 @@
+odswiez:
+  name: Odśwież teraz
+  description: Natychmiast pobiera dane z mobiDziennika.
+zapisz_strony:
+  name: Zapisz strony (diagnostyka)
+  description: Zapisuje pobrane strony mobiDziennika do /config/mobidziennik_debug, aby można było poprawić odczyt.
+przeczytaj:
+  name: Pobierz treść nieprzeczytanych
+  description: >-
+    Pobiera treść nieprzeczytanych wiadomości, żeby było je widać na dashboardzie.
+    Uwaga: mobiDziennik oznaczy je wtedy jako przeczytane (nadawca zobaczy czas odczytu).
+  fields:
+    id:
+      name: ID wiadomości
+      description: Opcjonalnie – tylko ta jedna wiadomość. Puste = wszystkie nieprzeczytane.
+      required: false
+      example: "123456"
+      selector:
+        text:
