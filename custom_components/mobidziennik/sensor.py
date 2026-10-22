@@ -1,16 +1,17 @@
 """Czujniki mobiDziennika (zgodne z Aurora / Vultron dashboard)."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from . import MobiCoordinator
 from .const import CONF_STUDENT, DOMAIN
@@ -29,6 +30,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add: AddEnt
         ExamsSensor(coord, entry),
         AttendanceSensor(coord, entry),
         RemarksSensor(coord, entry),
+        NextExamSensor(coord, entry),
+        AverageSensor(coord, entry),
+        UnexcusedSensor(coord, entry),
     ])
 
 
@@ -166,7 +170,11 @@ class AttendanceSensor(_Base):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"last_update": self._d.last_update, "frekwencja": self._d.attendance}
+        return {
+            "last_update": self._d.last_update,
+            "frekwencja": self._d.attendance,
+            **_attendance_counts(self._d.attendance),
+        }
 
 
 class RemarksSensor(_Base):
@@ -181,3 +189,108 @@ class RemarksSensor(_Base):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"last_update": self._d.last_update, "uwagi": self._d.remarks}
+
+
+def _attendance_counts(items: list[dict[str, Any]]) -> dict[str, int]:
+    """Podsumowanie frekwencji według statusu."""
+    unexcused = excused = late = 0
+    for a in items:
+        st = (a.get("status") or "").lower()
+        if "spóźn" in st:
+            late += 1
+        elif "nieusprawiedliw" in st:
+            unexcused += 1
+        elif "usprawiedliw" in st:
+            excused += 1
+    return {"nieusprawiedliwione": unexcused, "usprawiedliwione": excused, "spoznienia": late}
+
+
+class NextExamSensor(_Base):
+    """Najbliższy zapowiedziany sprawdzian / kartkówka (data i godzina)."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "najblizszy_sprawdzian", "Najbliższy sprawdzian", "mdi:calendar-alert")
+
+    def _next(self) -> tuple[datetime, dict[str, Any]] | None:
+        now = dt_util.now()
+        for ex in self._d.exams:
+            iso = ex.get("data_iso")
+            if not iso:
+                continue
+            when = dt_util.as_local(datetime.fromisoformat(iso).replace(tzinfo=dt_util.get_default_time_zone()))
+            if when >= now - timedelta(hours=1):
+                return when, ex
+        return None
+
+    @property
+    def native_value(self) -> datetime | None:
+        nxt = self._next()
+        return nxt[0] if nxt else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        nxt = self._next()
+        if not nxt:
+            return {"last_update": self._d.last_update}
+        when, ex = nxt
+        return {
+            "last_update": self._d.last_update,
+            "przedmiot": ex.get("przedmiot"),
+            "rodzaj": ex.get("rodzaj"),
+            "tematyka": ex.get("tematyka"),
+            "dni_do": (when.date() - dt_util.now().date()).days,
+        }
+
+
+class AverageSensor(_Base):
+    """Średnia ze średnich przedmiotów (oceny liczone do średniej)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "srednia", "Średnia ocen", "mdi:chart-line")
+
+    def _avgs(self) -> dict[str, float]:
+        subjects: dict[str, list[float]] = {}
+        for g in self._d.grades:
+            if g.get("wartosc") and g.get("do_sredniej"):
+                subjects.setdefault(g["przedmiot"], []).append(g["wartosc"])
+        return {k: round(sum(v) / len(v), 2) for k, v in subjects.items() if v}
+
+    @property
+    def native_value(self) -> float | None:
+        avgs = self._avgs()
+        return round(sum(avgs.values()) / len(avgs), 2) if avgs else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        avgs = self._avgs()
+        best = max(avgs, key=avgs.get) if avgs else None
+        worst = min(avgs, key=avgs.get) if avgs else None
+        return {
+            "last_update": self._d.last_update,
+            "srednie": dict(sorted(avgs.items(), key=lambda kv: kv[1], reverse=True)),
+            "najlepszy_przedmiot": best,
+            "najslabszy_przedmiot": worst,
+        }
+
+
+class UnexcusedSensor(_Base):
+    """Liczba nieusprawiedliwionych nieobecności (do szybkich automatyzacji)."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "nieusprawiedliwione", "Nieusprawiedliwione nieobecności", "mdi:account-cancel-outline")
+        self._attr_native_unit_of_measurement = "godzin"
+
+    @property
+    def native_value(self) -> int:
+        return _attendance_counts(self._d.attendance)["nieusprawiedliwione"]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"last_update": self._d.last_update, **_attendance_counts(self._d.attendance)}

@@ -402,38 +402,80 @@ def parse_grades(text: str) -> list[dict[str, Any]]:
     return out
 
 
+EXAM_KINDS = {
+    "kar": "Kartkówka",
+    "spr": "Sprawdzian",
+    "pra": "Praca klasowa",
+    "tes": "Test",
+    "odp": "Odpowiedź ustna",
+    "zad": "Zadanie domowe",
+    "pro": "Projekt",
+    "dyk": "Dyktando",
+}
+RE_EXAM_DATE = re.compile(r"(\d{1,2})\s+([^\s\d]+)\s+(\d{4})(?:.*?(\d{1,2}):(\d{2}))?")
+
+
+def _exam_kind(cell: Any, text: str) -> str:
+    """Pełna nazwa rodzaju – mobiDziennik skraca ją do 'kar...', 'spr...'."""
+    for el in [cell, *cell.find_all(True)]:
+        title = (el.get("title") or "").strip()
+        if title and not title.endswith("..."):
+            title = _text(title)
+            return title[:1].upper() + title[1:]
+    clean = text.replace("...", "").replace("…", "").strip()
+    return EXAM_KINDS.get(clean[:3].lower(), clean or text)
+
+
+def _exam_datetime(s: str) -> datetime | None:
+    """'26 paź 2026 pon. - 09:45' -> datetime (bez strefy)."""
+    m = RE_EXAM_DATE.search(s)
+    if not m:
+        return None
+    month_word = m.group(2).lower().rstrip(".")
+    month = MONTHS_SHORT.get(month_word[:3]) or MONTHS_FULL.get(month_word)
+    if not month:
+        return None
+    try:
+        return datetime(int(m.group(3)), month, int(m.group(1)),
+                        int(m.group(4) or 0), int(m.group(5) or 0))
+    except ValueError:
+        return None
+
+
 def parse_exams(text: str) -> list[dict[str, Any]]:
     """Parser dla zapowiedzianych sprawdzianów ze strony /dziennik/sprawdziany."""
     soup = BeautifulSoup(text, "html.parser")
     out: list[dict[str, Any]] = []
 
     for row in soup.select("table.spis tr, tr.podswietl"):
-        cols = [c.get_text(" ", strip=True) for c in row.find_all("td")]
-        if len(cols) >= 4:
-            if "Data" in cols[0] or "Przedmiot" in cols[0]:
-                continue
+        tds = row.find_all("td")
+        cols = [c.get_text(" ", strip=True) for c in tds]
+        if len(cols) < 4:
+            continue
+        if "Data" in cols[0] or "Przedmiot" in cols[0]:
+            continue
 
-            dt = _text(cols[0])
-            col1 = _text(cols[1])
-            col2 = _text(cols[2])
-            col3 = _text(cols[3])
-            col4 = _text(cols[4]) if len(cols) > 4 else ""
-
-            if re.match(r"^\d+\s*[a-z]?$", col1, re.I):
-                out.append({
-                    "data": dt,
-                    "przedmiot": col2,
-                    "rodzaj": col3,
-                    "tematyka": col4,
-                })
-            else:
-                out.append({
-                    "data": dt,
-                    "przedmiot": col1,
-                    "rodzaj": col2,
-                    "tematyka": col3,
-                    "nauczyciel": col4,
-                })
+        dt = _text(cols[0])
+        col1 = _text(cols[1])
+        if re.match(r"^\d+\s*[a-z]?$", col1, re.I):
+            item = {
+                "data": dt,
+                "przedmiot": _text(cols[2]),
+                "rodzaj": _exam_kind(tds[3], _text(cols[3])),
+                "tematyka": _text(cols[4]) if len(cols) > 4 else "",
+            }
+        else:
+            item = {
+                "data": dt,
+                "przedmiot": col1,
+                "rodzaj": _exam_kind(tds[2], _text(cols[2])),
+                "tematyka": _text(cols[3]),
+                "nauczyciel": _text(cols[4]) if len(cols) > 4 else "",
+            }
+        when = _exam_datetime(dt)
+        item["data_iso"] = when.isoformat() if when else None
+        out.append(item)
+    out.sort(key=lambda e: e.get("data_iso") or "9999")
     return out
 
 

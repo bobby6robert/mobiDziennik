@@ -1,11 +1,16 @@
 {
   "domain": "mobidziennik",
   "name": "mobiDziennik",
-  "codeowners": [],
+  "codeowners": [
+    "@bobby6robert"
+  ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/",
+  "documentation": "https://github.com/bobby6robert/mobiDziennik",
   "iot_class": "cloud_polling",
-  "requirements": ["beautifulsoup4>=4.12.0"],
-  "version": "0.2.0"
+  "requirements": [
+    "beautifulsoup4>=4.12.0"
+  ],
+  "version": "1.0.6",
+  "issue_tracker": "https://github.com/bobby6robert/mobiDziennik/issues"
 }

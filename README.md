@@ -1,6 +1,6 @@
 # mobiDziennik for Home Assistant
 
-Niestandardowa integracja (Custom Integration) dla Home Assistancena, umożliwiająca bezpośrednie pobieranie danych ze szkolnego dziennika **mobiDziennik (WizjaNet)** bez użycia kluczy partnerskich – logowanie odbywa się automatycznie poprzez symulację przeglądarki.
+Niestandardowa integracja (Custom Integration) dla Home Assistanta, umożliwiająca bezpośrednie pobieranie danych ze szkolnego dziennika **mobiDziennik (WizjaNet)** bez użycia kluczy partnerskich – logowanie odbywa się automatycznie poprzez symulację przeglądarki.
 
 ## Funkcje
 Integracja pobiera i udostępnia w Home Assistancie kluczowe informacje szkolne:
@@ -11,6 +11,15 @@ Integracja pobiera i udostępnia w Home Assistancie kluczowe informacje szkolne:
 * 🕒 **Frekwencja** (nieobecności i spóźnienia)
 * 💬 **Uwagi i pochwały** (wpisy od nauczycieli)
 * 🍀 **Szczęśliwy numerek**
+* 📆 **Najbliższy sprawdzian** – data i godzina, przedmiot, rodzaj i tematyka, liczba dni do sprawdzianu (od v1.0.6)
+* 📈 **Średnia ocen** – średnia ze wszystkich przedmiotów, średnie przedmiotów, najlepszy i najsłabszy przedmiot (od v1.0.6)
+* 🚫 **Nieusprawiedliwione nieobecności** – licznik do automatyzacji (od v1.0.6)
+
+### Zmiany w v1.0.6
+* Pełne nazwy rodzajów sprawdzianów („Kartkówka”, „Sprawdzian” zamiast „kar...”, „spr...”).
+* Sprawdziany mają pole `data_iso` i są posortowane od najbliższego.
+* Frekwencja ma podsumowanie: `nieusprawiedliwione`, `usprawiedliwione`, `spoznienia`.
+* Poprawiony numer wersji, link do dokumentacji i autor w `manifest.json`.
 
 ---
 
