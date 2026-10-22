@@ -3,48 +3,48 @@
     "step": {
       "user": {
         "title": "mobiDziennik",
-        "description": "Adres szkoły to pierwsza część adresu, np. dla https://zssiedliszcze.mobidziennik.pl wpisz zssiedliszcze.",
+        "description": "School address is the first part of the URL, e.g., for https://demo.mobidziennik.pl enter demo.",
         "data": {
-          "server": "Adres szkoły (subdomena)",
-          "username": "Login lub e-mail",
-          "password": "Hasło",
-          "student": "Imię ucznia (np. Błażej)"
+          "server": "School address (subdomain)",
+          "username": "Login or email",
+          "password": "Password",
+          "student": "Student name (e.g. John)"
         }
       },
       "reauth_confirm": {
-        "title": "Zaloguj ponownie",
+        "title": "Re-authenticate",
         "data": {
-          "password": "Hasło"
+          "password": "Password"
         }
       }
     },
     "error": {
-      "invalid_auth": "Nieprawidłowy login lub hasło",
-      "cannot_connect": "Nie można połączyć się ze stroną szkoły"
+      "invalid_auth": "Invalid username or password",
+      "cannot_connect": "Cannot connect to school website"
     },
     "abort": {
-      "already_configured": "To konto jest już dodane",
-      "reauth_successful": "Zalogowano ponownie"
+      "already_configured": "Account is already configured",
+      "reauth_successful": "Re-authentication successful"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Ustawienia",
+        "title": "Settings",
         "data": {
-          "scan_minutes": "Odświeżanie co (minut)"
+          "scan_minutes": "Refresh interval (minutes)"
         }
       }
     }
   },
   "services": {
     "odswiez": {
-      "name": "Odśwież teraz",
-      "description": "Natychmiast pobiera dane z mobiDziennika."
+      "name": "Refresh now",
+      "description": "Immediately fetches data from mobiDziennik."
     },
     "zapisz_strony": {
-      "name": "Zapisz strony (diagnostyka)",
-      "description": "Zapisuje strony do /config/mobidziennik_debug."
+      "name": "Save pages (diagnostics)",
+      "description": "Saves HTML pages to /config/mobidziennik_debug."
     }
   }
 }
