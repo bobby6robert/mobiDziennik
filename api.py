@@ -70,6 +70,9 @@ class MobiData:
     lessons: list[dict[str, Any]] = field(default_factory=list)
     grades: list[dict[str, Any]] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    exams: list[dict[str, Any]] = field(default_factory=list)
+    attendance: list[dict[str, Any]] = field(default_factory=list)
+    remarks: list[dict[str, Any]] = field(default_factory=list)
     lucky_number: int | None = None
     last_update: str = ""
     errors: list[str] = field(default_factory=list)
@@ -139,8 +142,6 @@ class MobiDziennikClient:
     async def login(self) -> None:
         page = await self._get("/dziennik/")
         low = page.lower()
-        # strona błędnej subdomeny: "Uuuups... nieprawidłowy adres" (uwaga: okno resetu hasła
-        # zawiera "nieprawidłowy adres e-mail", więc sprawdzamy dokładny komunikat)
         if "uuuups" in low and "nieprawidłowy adres" in low and 'type="password"' not in low:
             raise MobiConnectionError("Nieprawidłowy adres szkoły (strona 'Uuuups')")
         if not self._is_login_page(page):
@@ -181,7 +182,7 @@ class MobiDziennikClient:
         data[pass_field] = self._password
         action = urljoin(self.base + "/dziennik/", form.get("action") or "/dziennik/")
         method = (form.get("method") or "post").lower()
-        _LOGGER.debug("mobiDziennik: logowanie %s %s pola=%s", method, action, list(data))
+        
         try:
             if method == "get":
                 async with self._s.get(action, params=data, headers={"User-Agent": USER_AGENT}) as r:
@@ -225,6 +226,9 @@ class MobiDziennikClient:
             ("plan_nastepny", f"/dziennik/planlekcji?typ=podstawowy&tydzien={(monday + timedelta(days=7)).isoformat()}"),
             ("oceny", f"/dziennik/oceny?semestr={semester}"),
             ("wiadomosci", "/dziennik/wiadomosci"),
+            ("sprawdziany", f"/dziennik/sprawdziany?semestr={semester}"),
+            ("frekwencja", f"/dziennik/frekwencja?semestr={semester}"),
+            ("uwagi", "/dziennik/uwagi"),
         ):
             try:
                 pages[key] = await self._page(path)
@@ -238,18 +242,34 @@ class MobiDziennikClient:
                 start = monday if key == "plan_biezacy" else monday + timedelta(days=7)
                 try:
                     out.lessons += parse_timetable(pages[key], start)
-                except Exception as err:  # noqa: BLE001
+                except Exception as err:
                     out.errors.append(f"{key}: parser {err!r}")
         if "oceny" in pages:
             try:
                 out.grades = parse_grades(pages["oceny"])
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 out.errors.append(f"oceny: parser {err!r}")
         if "wiadomosci" in pages:
             try:
                 out.messages = parse_messages(pages["wiadomosci"], today)
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 out.errors.append(f"wiadomosci: parser {err!r}")
+        if "sprawdziany" in pages:
+            try:
+                out.exams = parse_exams(pages["sprawdziany"])
+            except Exception as err:
+                out.errors.append(f"sprawdziany: parser {err!r}")
+        if "frekwencja" in pages:
+            try:
+                out.attendance = parse_attendance(pages["frekwencja"])
+            except Exception as err:
+                out.errors.append(f"frekwencja: parser {err!r}")
+        if "uwagi" in pages:
+            try:
+                out.remarks = parse_remarks(pages["uwagi"])
+            except Exception as err:
+                out.errors.append(f"uwagi: parser {err!r}")
+
         for txt in pages.values():
             n = parse_lucky_number(txt)
             if n is not None:
@@ -263,11 +283,6 @@ class MobiDziennikClient:
         return f"{self.base}/dziennik/wiadodebrana/?id={msg_id}"
 
     async def fetch_message(self, msg_id: str) -> dict[str, Any]:
-        """Treść jednej odebranej wiadomości.
-
-        UWAGA: otwarcie nieprzeczytanej wiadomości oznacza ją w mobiDzienniku jako przeczytaną
-        (nauczyciel widzi czas odczytu) – dlatego automatycznie pobieramy tylko przeczytane.
-        """
         text = await self._page(f"/dziennik/wiadodebrana/?id={msg_id}")
         return parse_message_body(text)
 
@@ -321,14 +336,12 @@ def parse_messages(text: str, today: date) -> list[dict[str, Any]]:
 
 
 def parse_message_body(text: str) -> dict[str, Any]:
-    """Strona /dziennik/wiadodebrana/?id=… -> {'tresc': zwykły tekst, 'zalaczniki': [nazwy]}."""
     soup = BeautifulSoup(text, "html.parser")
     content = soup.select_one("#content") or soup
     body = content.select_one(".wiadomosc_tresc")
     attachments = [_text(m.group(2)) for m in RE_ATTACHMENT.finditer(text)]
     if body is None:
         return {"tresc": "", "zalaczniki": attachments}
-    # blok z nadawcą / czasem przeczytania (nie jest częścią treści)
     for div in body.find_all("div"):
         if div.parent is not None and RE_META_DIV.search(div.get_text(" ", strip=True)[:200]):
             div.decompose()
@@ -391,8 +404,64 @@ def parse_grades(text: str) -> list[dict[str, Any]]:
     return out
 
 
+def parse_exams(text: str) -> list[dict[str, Any]]:
+    if "Brak zapowiedzianych sprawdzianów" in text:
+        return []
+    soup = BeautifulSoup(text, "html.parser")
+    table = soup.find(class_="spis")
+    if table is None:
+        return []
+    out = []
+    for row in table.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 4:
+            continue
+        out.append({
+            "data": tds[0].get_text(" ", strip=True),
+            "przedmiot": tds[1].get_text(" ", strip=True),
+            "rodzaj": tds[2].get_text(" ", strip=True),
+            "tematyka": tds[3].get_text(" ", strip=True),
+        })
+    return out
+
+
+def parse_attendance(text: str) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(text, "html.parser")
+    table = soup.find(class_="spis")
+    if table is None:
+        return []
+    out = []
+    for row in table.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 3:
+            continue
+        out.append({
+            "data": tds[0].get_text(" ", strip=True),
+            "godzina": tds[1].get_text(" ", strip=True),
+            "status": tds[2].get_text(" ", strip=True),
+        })
+    return out
+
+
+def parse_remarks(text: str) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(text, "html.parser")
+    table = soup.find(class_="spis")
+    if table is None:
+        return []
+    out = []
+    for row in table.find_all("tr"):
+        tds = row.find_all("td")
+        if len(tds) < 3:
+            continue
+        out.append({
+            "data": tds[0].get_text(" ", strip=True),
+            "nauczyciel": tds[1].get_text(" ", strip=True),
+            "tresc": tds[2].get_text(" ", strip=True),
+        })
+    return out
+
+
 def parse_timetable(html: str, week_start: date) -> list[dict[str, Any]]:
-    """Plan tygodniowy: bloki pozycjonowane w % (lewo = dzień, góra = godzina)."""
     ranges: list[tuple[float, float, date]] = []
     top = RE_TT_TOP.search(html)
     if top:
@@ -455,7 +524,7 @@ def parse_timetable(html: str, week_start: date) -> list[dict[str, Any]]:
                 room = mroom.group(1)
                 it = it.replace(f"({room})", "").strip()
             if it.startswith("%") and it.endswith("%"):
-                continue  # krótka nazwa przedmiotu
+                continue
             it = it.replace("%", "").strip()
             if it:
                 clean.append(it)
