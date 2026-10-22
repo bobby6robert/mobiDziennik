@@ -3,12 +3,12 @@
     "step": {
       "user": {
         "title": "mobiDziennik",
-        "description": "Adres szkoły to pierwsza część adresu, np. dla https://zssiedliszcze.mobidziennik.pl wpisz zssiedliszcze.",
+        "description": "Adres szkoły to pierwsza część adresu, np. dla https://demo.mobidziennik.pl wpisz demo.",
         "data": {
           "server": "Adres szkoły (subdomena)",
           "username": "Login lub e-mail",
           "password": "Hasło",
-          "student": "Imię ucznia (np. Błażej)"
+          "student": "Imię ucznia (np. Jan)"
         }
       },
       "reauth_confirm": {
