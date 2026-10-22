@@ -403,22 +403,38 @@ def parse_grades(text: str) -> list[dict[str, Any]]:
 
 
 def parse_exams(text: str) -> list[dict[str, Any]]:
-    """Parser dla zapowiedzianych sprawdzianów i kartkówek ze strony /dziennik/sprawdziany."""
+    """Parser dla zapowiedzianych sprawdzianów ze strony /dziennik/sprawdziany."""
     soup = BeautifulSoup(text, "html.parser")
     out: list[dict[str, Any]] = []
-    table = soup.find(class_="spis")
-    if not table:
-        return out
-    for row in table.find_all("tr"):
-        cols = row.find_all("td")
-        if len(cols) >= 3:
-            out.append({
-                "data": _text(cols[0].get_text()),
-                "przedmiot": _text(cols[1].get_text()),
-                "rodzaj": _text(cols[2].get_text()),
-                "tematyka": _text(cols[3].get_text()) if len(cols) > 3 else "",
-                "nauczyciel": _text(cols[4].get_text()) if len(cols) > 4 else "",
-            })
+
+    for row in soup.select("table.spis tr, tr.podswietl"):
+        cols = [c.get_text(" ", strip=True) for c in row.find_all("td")]
+        if len(cols) >= 4:
+            if "Data" in cols[0] or "Przedmiot" in cols[0]:
+                continue
+
+            dt = _text(cols[0])
+            col1 = _text(cols[1])
+            col2 = _text(cols[2])
+            col3 = _text(cols[3])
+            col4 = _text(cols[4]) if len(cols) > 4 else ""
+
+            # Jeśli kolumna 1 zawiera klasę (np. '1 a'), schochodzimy o jeden w prawo
+            if re.match(r"^\d+\s*[a-z]?$", col1, re.I):
+                out.append({
+                    "data": dt,
+                    "przedmiot": col2,
+                    "rodzaj": col3,
+                    "tematyka": col4,
+                })
+            else:
+                out.append({
+                    "data": dt,
+                    "przedmiot": col1,
+                    "rodzaj": col2,
+                    "tematyka": col3,
+                    "nauczyciel": col4,
+                })
     return out
 
 
@@ -426,18 +442,27 @@ def parse_attendance(text: str) -> list[dict[str, Any]]:
     """Parser dla frekwencji ze strony /dziennik/frekwencja."""
     soup = BeautifulSoup(text, "html.parser")
     out: list[dict[str, Any]] = []
-    table = soup.find(class_="spis")
-    if not table:
-        return out
-    for row in table.find_all("tr"):
-        cols = row.find_all("td")
-        if len(cols) >= 3:
+
+    for el in soup.select(".frekwencja_wpis, .absent, .late, tr.podswietl"):
+        cols = [c.get_text(" ", strip=True) for c in el.find_all("td")]
+        if len(cols) >= 3 and "Data" not in cols[0]:
             out.append({
-                "data": _text(cols[0].get_text()),
-                "godzina": _text(cols[1].get_text()),
-                "status": _text(cols[2].get_text()),
-                "przedmiot": _text(cols[3].get_text()) if len(cols) > 3 else "",
+                "data": _text(cols[0]),
+                "godzina": _text(cols[1]),
+                "status": _text(cols[2]),
+                "przedmiot": _text(cols[3]) if len(cols) > 3 else "",
             })
+
+    if not out:
+        for span in soup.select("span.bad_attendance, span.spoznienie, span.nieobecnosc"):
+            parent = span.find_parent("tr") or span.find_parent("div")
+            if parent:
+                out.append({
+                    "data": date.today().isoformat(),
+                    "godzina": "-",
+                    "status": _text(span.get_text()),
+                    "przedmiot": _text(parent.get_text())[:40],
+                })
     return out
 
 
@@ -445,17 +470,15 @@ def parse_remarks(text: str) -> list[dict[str, Any]]:
     """Parser dla uwag i pochwał ze strony /dziennik/uwagi."""
     soup = BeautifulSoup(text, "html.parser")
     out: list[dict[str, Any]] = []
-    table = soup.find(class_="spis")
-    if not table:
-        return out
-    for row in table.find_all("tr"):
-        cols = row.find_all("td")
-        if len(cols) >= 2:
+
+    for row in soup.select("table.spis tr, tr.podswietl"):
+        cols = [c.get_text(" ", strip=True) for c in row.find_all("td")]
+        if len(cols) >= 2 and "Data" not in cols[0]:
             out.append({
-                "data": _text(cols[0].get_text()),
-                "nauczyciel": _text(cols[1].get_text()),
-                "tresc": _text(cols[2].get_text()) if len(cols) > 2 else "",
-                "punkty": _text(cols[3].get_text()) if len(cols) > 3 else "",
+                "data": _text(cols[0]),
+                "nauczyciel": _text(cols[1]),
+                "tresc": _text(cols[2]) if len(cols) > 2 else "",
+                "punkty": _text(cols[3]) if len(cols) > 3 else "",
             })
     return out
 
