@@ -9,7 +9,7 @@
  * Dodatkowo: kreator pulpitu – gdy przy dodawaniu integracji zaznaczono „Utwórz pulpit”,
  * przeglądarka administratora sama tworzy pulpit „mobiDziennik” z widokiem dla ucznia.
  */
-const MD_VERSION = '1.1.0';
+const MD_VERSION = '1.1.2';
 const MD_SECTIONS = [
   ['plan', 'Plan lekcji'],
   ['sprawdziany', 'Sprawdziany i kartkówki'],
@@ -55,7 +55,7 @@ const mdStudentName = (hass, deviceId) => {
 };
 
 class MobiDziennikCard extends HTMLElement {
-  static getConfigElement() { return document.createElement('mobidziennik-card-editor'); }
+  static getConfigElement() { mdDefine(); return document.createElement('mobidziennik-card-editor'); }
 
   static getStubConfig(hass) {
     const dev = mdDevices(hass)[0];
@@ -359,7 +359,8 @@ const MD_CSS = `
   .avg b { text-align:right; }
   .bar { height:8px; border-radius:4px; background:var(--secondary-background-color); overflow:hidden; }
   .bar i { display:block; height:100%; border-radius:4px; background:var(--primary-color); }
-  .bar i.g5 { background:var(--success-color, #43a047) !important; } .bar i.g2, .bar i.g1 { background:var(--warning-color, #ffa600) !important; }
+  .bar i.g5 { background:var(--success-color, #43a047) !important; } .bar i.g4 { background:var(--info-color, #039be5) !important; }
+  .bar i.g3 { background:var(--secondary-text-color) !important; } .bar i.g2 { background:var(--warning-color, #ffa600) !important; } .bar i.g1 { background:var(--error-color, #db4437) !important; }
   .link { align-self:flex-start; background:none; border:none; padding:4px 0; color:var(--primary-color); cursor:pointer; font-size:13px; }
   .tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:6px; }
   .tile { border-radius:12px; padding:8px; text-align:center; background:var(--secondary-background-color); }
@@ -396,8 +397,15 @@ class MobiDziennikCardEditor extends HTMLElement {
   }
 }
 
-if (!customElements.get('mobidziennik-card')) customElements.define('mobidziennik-card', MobiDziennikCard);
-if (!customElements.get('mobidziennik-card-editor')) customElements.define('mobidziennik-card-editor', MobiDziennikCardEditor);
+// Rejestracja odporna na zbyt wczesne załadowanie (przed rejestrem elementów interfejsu HA):
+// sprawdzamy jeszcze kilka razy i w razie potrzeby rejestrujemy ponownie.
+function mdDefine() {
+  for (const [tag, cls] of [['mobidziennik-card', MobiDziennikCard], ['mobidziennik-card-editor', MobiDziennikCardEditor]]) {
+    try { if (!customElements.get(tag)) customElements.define(tag, class extends cls {}); } catch (err) { /* już zdefiniowany */ }
+  }
+}
+mdDefine();
+[500, 2000, 5000, 15000].forEach((t) => setTimeout(mdDefine, t));
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === 'mobidziennik-card')) {
   window.customCards.push({

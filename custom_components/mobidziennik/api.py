@@ -457,7 +457,7 @@ def parse_exams(text: str) -> list[dict[str, Any]]:
 
         dt = _text(cols[0])
         col1 = _text(cols[1])
-        if re.match(r"^\d+\s*[a-z]?$", col1, re.I):
+        if re.match(r"^\d+\s*[a-z]{0,3}\d{0,2}$", col1, re.I):  # klasa/grupa, np. „2a”, „1 G2”
             item = {
                 "data": dt,
                 "przedmiot": _text(cols[2]),

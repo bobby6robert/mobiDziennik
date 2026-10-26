@@ -5,12 +5,12 @@
     "@bobby6robert"
   ],
   "config_flow": true,
-  "dependencies": ["http", "frontend", "websocket_api"],
+  "dependencies": ["http", "frontend", "lovelace", "websocket_api"],
   "documentation": "https://github.com/bobby6robert/mobiDziennik",
   "iot_class": "cloud_polling",
   "requirements": [
     "beautifulsoup4>=4.12.0"
   ],
-  "version": "1.1.0",
+  "version": "1.1.2",
   "issue_tracker": "https://github.com/bobby6robert/mobiDziennik/issues"
 }

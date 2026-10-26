@@ -15,6 +15,15 @@ Integracja pobiera i udostępnia w Home Assistancie kluczowe informacje szkolne:
 * 📈 **Średnia ocen** – średnia ze wszystkich przedmiotów, średnie przedmiotów, najlepszy i najsłabszy przedmiot (od v1.0.6)
 * 🚫 **Nieusprawiedliwione nieobecności** – licznik do automatyzacji (od v1.0.6)
 
+### Zmiany w v1.1.2
+* **Naprawione „Błąd konfiguracji” zamiast karty** – karta rejestruje się teraz jako zasób pulpitu (tak jak karty z HACS), więc ładuje się zawsze. Po aktualizacji zrestartuj HA i odśwież stronę (Ctrl+F5).
+* Poprawiony odczyt sprawdzianów w szkołach, gdzie w tabeli jest klasa/grupa w formie „1 G2” (przedmiot i rodzaj były przesunięte).
+* Kolory pasków średnich na karcie.
+
+### Zmiany w v1.1.1 (niewydana)
+* Poprawiony odczyt sprawdzianów w szkołach, gdzie w tabeli jest klasa/grupa w formie „1 G2” (przedmiot i rodzaj były przesunięte).
+* Kolory pasków średnich na karcie.
+
 ### Nowość w v1.1.0 – gotowa karta i kreator pulpitu
 * 🧩 **Karta „mobiDziennik”** – ładuje się sama razem z integracją (nie trzeba dodawać zasobów ani instalować nic z HACS).
   Na pulpicie: **Edytuj → Dodaj kartę → mobiDziennik**, wybierz ucznia z listy i zaznacz, co pokazać.

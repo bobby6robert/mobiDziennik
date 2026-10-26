@@ -31,9 +31,13 @@ async def async_setup_frontend(hass: HomeAssistant) -> None:
     path = Path(__file__).parent / "frontend" / "mobidziennik-card.js"
     try:
         await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(path), True)])
-        add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
-    except Exception:  # noqa: BLE001 – brak http/frontend (np. testy) nie może blokować czujników
-        _LOGGER.warning("mobiDziennik: nie udało się zarejestrować karty", exc_info=True)
+    except Exception:  # noqa: BLE001 – brak http (np. testy) nie może blokować czujników
+        _LOGGER.warning("mobiDziennik: nie udało się udostępnić pliku karty", exc_info=True)
+    url = f"{CARD_URL}?v={VERSION}"
+    # Zasób pulpitu (Lovelace) ładuje się po starcie interfejsu – tak jak karty z HACS.
+    # „extra_js_url” ładuje się za wcześnie (przed rejestrem elementów interfejsu) i karta byłaby niewidoczna.
+    if not await _async_register_resource(hass, url):
+        add_extra_js_url(hass, url)
 
     store: Store[dict[str, Any]] = Store(hass, 1, STORE_KEY)
     data = await store.async_load() or {}
@@ -41,6 +45,29 @@ async def async_setup_frontend(hass: HomeAssistant) -> None:
 
     websocket_api.async_register_command(hass, ws_pulpit)
     websocket_api.async_register_command(hass, ws_pulpit_gotowy)
+
+
+async def _async_register_resource(hass: HomeAssistant, url: str) -> bool:
+    """Dodaje / aktualizuje zasób Lovelace z kartą. False = nie da się (np. pulpity w trybie YAML)."""
+    try:
+        ll = hass.data.get("lovelace")
+        resources = getattr(ll, "resources", None) if ll is not None else None
+        if resources is None and isinstance(ll, dict):
+            resources = ll.get("resources")
+        if resources is None or not hasattr(resources, "async_create_item"):
+            return False
+        if hasattr(resources, "async_get_info"):
+            await resources.async_get_info()  # wczytuje listę zasobów, jeśli jeszcze nie wczytana
+        for item in resources.async_items():
+            if str(item.get("url", "")).split("?")[0] == CARD_URL:
+                if item.get("url") != url:
+                    await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
+                return True
+        await resources.async_create_item({"res_type": "module", "url": url})
+        return True
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("mobiDziennik: nie udało się dodać zasobu karty – użyję zapasowego ładowania", exc_info=True)
+        return False
 
 
 async def async_reset_dashboard(hass: HomeAssistant, entry_id: str) -> None:
