@@ -15,7 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 _LOGGER = logging.getLogger(__name__)
 
 from .api import MobiAuthError, MobiConnectionError, MobiDziennikClient
-from .const import CONF_SCAN_MINUTES, CONF_SERVER, CONF_STUDENT, DEFAULT_SCAN_MINUTES, DOMAIN
+from .const import CONF_DASHBOARD, CONF_SCAN_MINUTES, CONF_SERVER, CONF_STUDENT, DEFAULT_SCAN_MINUTES, DOMAIN
 
 
 def _schema(defaults: dict[str, Any]) -> vol.Schema:
@@ -24,6 +24,7 @@ def _schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Required(CONF_USERNAME, default=defaults.get(CONF_USERNAME, "")): str,
         vol.Required(CONF_PASSWORD): str,
         vol.Required(CONF_STUDENT, default=defaults.get(CONF_STUDENT, "")): str,
+        vol.Optional(CONF_DASHBOARD, default=defaults.get(CONF_DASHBOARD, True)): bool,
     })
 
 
@@ -90,9 +91,17 @@ class MobiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class MobiOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        entry = self.config_entry
         if user_input is not None:
+            if user_input.pop(CONF_DASHBOARD, False):
+                # „Utwórz pulpit ponownie” – karta w przeglądarce administratora zrobi to sama
+                from .pulpit import async_reset_dashboard
+
+                self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_DASHBOARD: True})
+                await async_reset_dashboard(self.hass, entry.entry_id)
             return self.async_create_entry(title="", data=user_input)
-        current = self.config_entry.options.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)
+        current = entry.options.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
             vol.Required(CONF_SCAN_MINUTES, default=current): vol.All(int, vol.Range(min=10, max=240)),
+            vol.Optional(CONF_DASHBOARD, default=False): bool,
         }))

@@ -6,10 +6,11 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -42,6 +43,7 @@ class _Base(CoordinatorEntity[MobiCoordinator], SensorEntity):
 
     def __init__(self, coord: MobiCoordinator, entry: ConfigEntry, key: str, name: str, icon: str) -> None:
         super().__init__(coord)
+        self._key = key
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_name = name
         self._attr_icon = icon
@@ -58,6 +60,24 @@ class _Base(CoordinatorEntity[MobiCoordinator], SensorEntity):
     def _d(self):
         return self.coordinator.data
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        @callback
+        def _midnight(_now) -> None:
+            # po północy „dziś” to już inny dzień – przelicz bez czekania na pobranie danych
+            self.async_write_ha_state()
+
+        self.async_on_remove(async_track_time_change(self.hass, _midnight, hour=0, minute=0, second=5))
+
+    def _attrs(self) -> dict[str, Any]:
+        return {"last_update": self._d.last_update}
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        # „mobidziennik” = rodzaj czujnika – po nim karta mobiDziennik znajduje swoje encje
+        return {"mobidziennik": self._key, **self._attrs()}
+
 
 class PlanSensor(_Base):
     def __init__(self, c, e):
@@ -66,12 +86,26 @@ class PlanSensor(_Base):
 
     @property
     def native_value(self) -> int:
-        today = date.today().isoformat()
+        today = dt_util.now().date().isoformat()
         return sum(1 for l in self._d.lessons if l.get("d") == today)
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return {"last_update": self._d.last_update, "lekcje": self._d.lessons}
+    def _attrs(self) -> dict[str, Any]:
+        now = dt_util.now()
+        today = now.date().isoformat()
+        hhmm = now.strftime("%H:%M")
+        dzis = [l for l in self._d.lessons if l.get("d") == today]
+        # najbliższy dzień nauki: dziś (jeśli lekcje jeszcze trwają) albo kolejny dzień z lekcjami
+        koniec = (dzis[-1].get("g") or "-").split("-")[-1] if dzis else ""
+        if dzis and (not koniec or koniec > hhmm):
+            dzien = today
+        else:
+            dzien = next((l["d"] for l in self._d.lessons if l.get("d", "") > today), None)
+        return {
+            "last_update": self._d.last_update,
+            "lekcje": self._d.lessons,
+            "najblizszy_dzien": dzien,
+            "najblizszy_dzien_lekcji": sum(1 for l in self._d.lessons if l.get("d") == dzien) if dzien else 0,
+        }
 
 
 class MessagesSensor(_Base):
@@ -83,8 +117,7 @@ class MessagesSensor(_Base):
     def native_value(self) -> int:
         return sum(1 for m in self._d.messages if not m.get("przeczytana"))
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         return {"last_update": self._d.last_update, "wiadomosci": self._d.messages[:30]}
 
 
@@ -97,8 +130,7 @@ class GradesSensor(_Base):
     def native_value(self) -> int:
         return len(self._d.grades)
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         grades = sorted(self._d.grades, key=lambda g: g.get("data") or "", reverse=True)
         subjects: dict[str, list[float]] = {}
         for g in self._d.grades:
@@ -116,8 +148,7 @@ class LuckySensor(_Base):
     def native_value(self):
         return self._d.lucky_number
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         return {"last_update": self._d.last_update}
 
 
@@ -131,8 +162,7 @@ class StatusSensor(_Base):
     def native_value(self) -> str:
         return "błędy" if self._d.errors else "ok"
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         return {
             "last_update": self._d.last_update,
             "bledy": self._d.errors,
@@ -154,8 +184,7 @@ class ExamsSensor(_Base):
     def native_value(self) -> int:
         return len(self._d.exams)
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         return {"last_update": self._d.last_update, "sprawdziany": self._d.exams}
 
 
@@ -168,8 +197,7 @@ class AttendanceSensor(_Base):
     def native_value(self) -> int:
         return len(self._d.attendance)
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         return {
             "last_update": self._d.last_update,
             "frekwencja": self._d.attendance,
@@ -186,8 +214,7 @@ class RemarksSensor(_Base):
     def native_value(self) -> int:
         return len(self._d.remarks)
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         return {"last_update": self._d.last_update, "uwagi": self._d.remarks}
 
 
@@ -229,8 +256,7 @@ class NextExamSensor(_Base):
         nxt = self._next()
         return nxt[0] if nxt else None
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         nxt = self._next()
         if not nxt:
             return {"last_update": self._d.last_update}
@@ -265,8 +291,7 @@ class AverageSensor(_Base):
         avgs = self._avgs()
         return round(sum(avgs.values()) / len(avgs), 2) if avgs else None
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         avgs = self._avgs()
         best = max(avgs, key=avgs.get) if avgs else None
         worst = min(avgs, key=avgs.get) if avgs else None
@@ -291,6 +316,5 @@ class UnexcusedSensor(_Base):
     def native_value(self) -> int:
         return _attendance_counts(self._d.attendance)["nieusprawiedliwione"]
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def _attrs(self) -> dict[str, Any]:
         return {"last_update": self._d.last_update, **_attendance_counts(self._d.attendance)}

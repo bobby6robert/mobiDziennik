@@ -10,7 +10,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import MobiAuthError, MobiConnectionError, MobiData, MobiDziennikClient
@@ -19,6 +21,15 @@ from .const import CONF_SCAN_MINUTES, CONF_SERVER, DEBUG_DIR, DEFAULT_SCAN_MINUT
 _LOGGER = logging.getLogger(__name__)
 MAX_BODIES = 15
 PLATFORMS = [Platform.SENSOR]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Karta mobiDziennik + kreator pulpitu (raz na start)."""
+    from .pulpit import async_setup_frontend
+
+    await async_setup_frontend(hass)
+    return True
 
 
 class MobiCoordinator(DataUpdateCoordinator[MobiData]):
@@ -26,7 +37,7 @@ class MobiCoordinator(DataUpdateCoordinator[MobiData]):
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         minutes = entry.options.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)
-        super().__init__(hass, _LOGGER, name=f"{DOMAIN}_{entry.entry_id}",
+        super().__init__(hass, _LOGGER, config_entry=entry, name=f"{DOMAIN}_{entry.entry_id}",
                          update_interval=timedelta(minutes=minutes))
         session = async_create_clientsession(hass, cookie_jar=aiohttp.CookieJar())
         self.client = MobiDziennikClient(session, entry.data[CONF_SERVER],

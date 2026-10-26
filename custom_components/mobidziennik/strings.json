@@ -8,7 +8,11 @@
           "server": "Adres szkoły (subdomena)",
           "username": "Login lub e-mail",
           "password": "Hasło",
-          "student": "Imię ucznia (np. Jan)"
+          "student": "Imię ucznia (np. Jan)",
+          "pulpit": "Utwórz pulpit mobiDziennik (plan, oceny, sprawdziany, wiadomości)"
+        },
+        "data_description": {
+          "pulpit": "Pulpit pojawi się w menu bocznym chwilę po dodaniu (odśwież stronę, jeśli go nie widać). Kartę „mobiDziennik” możesz też dodać do dowolnego pulpitu: Edytuj → Dodaj kartę → mobiDziennik."
         }
       },
       "reauth_confirm": {
@@ -32,7 +36,8 @@
       "init": {
         "title": "Ustawienia",
         "data": {
-          "scan_minutes": "Odświeżanie co (minut)"
+          "scan_minutes": "Odświeżanie co (minut)",
+          "pulpit": "Utwórz pulpit ponownie"
         }
       }
     }

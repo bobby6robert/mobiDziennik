@@ -8,7 +8,11 @@
           "server": "School address (subdomain)",
           "username": "Login or email",
           "password": "Password",
-          "student": "Student name (e.g. John)"
+          "student": "Student name (e.g. John)",
+          "pulpit": "Create a mobiDziennik dashboard (timetable, grades, tests, messages)"
+        },
+        "data_description": {
+          "pulpit": "The dashboard appears in the sidebar shortly after setup (refresh the page if needed). You can also add the „mobiDziennik” card to any dashboard."
         }
       },
       "reauth_confirm": {
@@ -32,7 +36,8 @@
       "init": {
         "title": "Settings",
         "data": {
-          "scan_minutes": "Refresh interval (minutes)"
+          "scan_minutes": "Refresh interval (minutes)",
+          "pulpit": "Create the dashboard again"
         }
       }
     }
