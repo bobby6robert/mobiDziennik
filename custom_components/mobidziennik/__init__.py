@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import timedelta
+from datetime import date, timedelta
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -68,6 +68,33 @@ class MobiCoordinator(DataUpdateCoordinator[MobiData]):
             else:
                 m["tresc_pobrana"] = False
 
+    def _keep_previous(self, data: MobiData) -> None:
+        """Gdy strona się nie pobrała (np. chwilowy błąd DNS), zostaw ostatnie dobre dane zamiast pustych."""
+        prev = self.data
+        if prev is None or not data.failed:
+            return
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        if today.weekday() >= 5:
+            monday += timedelta(days=7)
+        lost = set()
+        if "plan_biezacy" in data.failed:
+            lost.add(monday)
+        if "plan_nastepny" in data.failed:
+            lost.add(monday + timedelta(days=7))
+        if lost:
+            def week(l: dict) -> date:
+                d = date.fromisoformat(l["d"])
+                return d - timedelta(days=d.weekday())
+            keep = [l for l in prev.lessons if week(l) in lost]
+            data.lessons = sorted(data.lessons + keep, key=lambda x: (x["d"], x["g"]))
+        for key, attr in (("oceny", "grades"), ("wiadomosci", "messages"), ("sprawdziany", "exams"),
+                          ("frekwencja", "attendance"), ("uwagi", "remarks")):
+            if key in data.failed:
+                setattr(data, attr, getattr(prev, attr))
+        if data.lucky_number is None:
+            data.lucky_number = prev.lucky_number
+
     async def _async_update_data(self) -> MobiData:
         try:
             data = await self.client.fetch_all()
@@ -79,6 +106,7 @@ class MobiCoordinator(DataUpdateCoordinator[MobiData]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except MobiConnectionError as err:
             raise UpdateFailed(str(err)) from err
+        self._keep_previous(data)
         self._apply_bodies(data)
         if data.errors:
             _LOGGER.warning("mobiDziennik – część danych nie została odczytana: %s", "; ".join(data.errors))

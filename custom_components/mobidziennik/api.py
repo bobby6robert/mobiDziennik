@@ -6,6 +6,7 @@ partnerskich – wypełnia zwykły formularz logowania ze strony szkoły.
 """
 from __future__ import annotations
 
+import asyncio
 import html as htmllib
 import logging
 import re
@@ -76,6 +77,7 @@ class MobiData:
     lucky_number: int | None = None
     last_update: str = ""
     errors: list[str] = field(default_factory=list)
+    failed: set[str] = field(default_factory=set)
     raw_pages: dict[str, str] = field(default_factory=dict)
 
 
@@ -124,14 +126,22 @@ class MobiDziennikClient:
     # ── HTTP ───────────────────────────────────────────────
     async def _get(self, path: str) -> str:
         url = path if path.startswith("http") else self.base + path
-        try:
-            async with self._s.get(url, headers={"User-Agent": USER_AGENT}, timeout=aiohttp.ClientTimeout(total=30)) as r:
-                text = await r.text()
-                if r.status >= 400:
-                    raise MobiConnectionError(f"GET {path}: HTTP {r.status}")
-                return text
-        except (aiohttp.ClientError, TimeoutError) as err:
-            raise MobiConnectionError(f"GET {path}: {err}") from err
+        # chwilowe błędy sieci/DNS: do 3 prób (po 3 s i 10 s)
+        for attempt, pause in enumerate((3, 10, None)):
+            try:
+                async with self._s.get(url, headers={"User-Agent": USER_AGENT}, timeout=aiohttp.ClientTimeout(total=30)) as r:
+                    text = await r.text()
+                    if r.status >= 500 and pause is not None:
+                        raise aiohttp.ClientResponseError(r.request_info, (), status=r.status)
+                    if r.status >= 400:
+                        raise MobiConnectionError(f"GET {path}: HTTP {r.status}")
+                    return text
+            except (aiohttp.ClientError, TimeoutError) as err:
+                if pause is None:
+                    raise MobiConnectionError(f"GET {path}: {err}") from err
+                _LOGGER.debug("mobiDziennik: GET %s nieudane (%s), ponowna próba %d", path, err, attempt + 1)
+                await asyncio.sleep(pause)
+        raise MobiConnectionError(f"GET {path}: brak odpowiedzi")
 
     @staticmethod
     def _is_login_page(text: str) -> bool:
@@ -234,6 +244,7 @@ class MobiDziennikClient:
                 raise
             except MobiConnectionError as err:
                 out.errors.append(f"{key}: {err}")
+                out.failed.add(key)
 
         for key in ("plan_biezacy", "plan_nastepny"):
             if key in pages:
@@ -242,31 +253,37 @@ class MobiDziennikClient:
                     out.lessons += parse_timetable(pages[key], start)
                 except Exception as err:
                     out.errors.append(f"{key}: parser {err!r}")
+                out.failed.add(key)
         if "oceny" in pages:
             try:
                 out.grades = parse_grades(pages["oceny"])
             except Exception as err:
                 out.errors.append(f"oceny: parser {err!r}")
+                out.failed.add("oceny")
         if "wiadomosci" in pages:
             try:
                 out.messages = parse_messages(pages["wiadomosci"], today)
             except Exception as err:
                 out.errors.append(f"wiadomosci: parser {err!r}")
+                out.failed.add("wiadomosci")
         if "sprawdziany" in pages:
             try:
                 out.exams = parse_exams(pages["sprawdziany"])
             except Exception as err:
                 out.errors.append(f"sprawdziany: parser {err!r}")
+                out.failed.add("sprawdziany")
         if "frekwencja" in pages:
             try:
                 out.attendance = parse_attendance(pages["frekwencja"])
             except Exception as err:
                 out.errors.append(f"frekwencja: parser {err!r}")
+                out.failed.add("frekwencja")
         if "uwagi" in pages:
             try:
                 out.remarks = parse_remarks(pages["uwagi"])
             except Exception as err:
                 out.errors.append(f"uwagi: parser {err!r}")
+                out.failed.add("uwagi")
 
         for txt in pages.values():
             n = parse_lucky_number(txt)

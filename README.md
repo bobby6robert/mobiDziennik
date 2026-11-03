@@ -15,6 +15,10 @@ Integracja pobiera i udostępnia w Home Assistancie kluczowe informacje szkolne:
 * 📈 **Średnia ocen** – średnia ze wszystkich przedmiotów, średnie przedmiotów, najlepszy i najsłabszy przedmiot (od v1.0.6)
 * 🚫 **Nieusprawiedliwione nieobecności** – licznik do automatyzacji (od v1.0.6)
 
+### Zmiany w v1.1.3
+
+- **Plan lekcji nie znika** przy chwilowym błędzie połączenia (np. problem z DNS): każda strona jest pobierana do 3 razy, a jeśli mimo to się nie uda, zostają ostatnie dobre dane (plan danego tygodnia, oceny, wiadomości, sprawdziany, frekwencja, uwagi) zamiast pustej listy.
+
 ### Zmiany w v1.1.2
 * **Naprawione „Błąd konfiguracji” zamiast karty** – karta rejestruje się teraz jako zasób pulpitu (tak jak karty z HACS), więc ładuje się zawsze. Po aktualizacji zrestartuj HA i odśwież stronę (Ctrl+F5).
 * Poprawiony odczyt sprawdzianów w szkołach, gdzie w tabeli jest klasa/grupa w formie „1 G2” (przedmiot i rodzaj były przesunięte).
