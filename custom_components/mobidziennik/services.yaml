@@ -17,3 +17,32 @@ przeczytaj:
       example: "123456"
       selector:
         text:
+przygotuj_usprawiedliwienie:
+  fields:
+    zakres:
+      default: tydzien
+      selector:
+        select:
+          options:
+            - tydzien
+            - wszystkie
+    entry_id:
+      selector:
+        config_entry:
+          integration: mobidziennik
+wyslij_usprawiedliwienie:
+  fields:
+    podpis:
+      example: Jan Kowalski
+      selector:
+        text:
+    entry_id:
+      selector:
+        config_entry:
+          integration: mobidziennik
+odrzuc_usprawiedliwienie:
+  fields:
+    entry_id:
+      selector:
+        config_entry:
+          integration: mobidziennik

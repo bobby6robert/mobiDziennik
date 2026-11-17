@@ -35,9 +35,17 @@
     "step": {
       "init": {
         "title": "Settings",
+        "description": "Choose the modules you need – unchecked ones are not downloaded and their entities are removed.",
         "data": {
-          "scan_minutes": "Refresh interval (minutes)",
+          "moduly": "Modules",
+          "scan_minutes": "Refresh every (minutes)",
+          "plec": "Student is",
+          "podpisy": "Parent signatures (comma separated)",
           "pulpit": "Create the dashboard again"
+        },
+        "data_description": {
+          "podpisy": "E.g. “Jan Kowalski, Anna Kowalska”. Used at the end of the excuse note. Empty = name from the mobiDziennik account.",
+          "plec": "Used in the excuse note text."
         }
       }
     }
@@ -50,6 +58,44 @@
     "zapisz_strony": {
       "name": "Save pages (diagnostics)",
       "description": "Saves HTML pages to /config/mobidziennik_debug."
+    },
+    "przygotuj_usprawiedliwienie": {
+      "name": "Prepare excuse note",
+      "description": "Checks detailed attendance and prepares an excuse note for unexcused absences and late arrivals. Sends nothing.",
+      "fields": {
+        "zakres": {
+          "name": "Range",
+          "description": "tydzien = last finished week, wszystkie = since the start of the school year."
+        },
+        "entry_id": {
+          "name": "Account",
+          "description": "Optional config entry ID."
+        }
+      }
+    },
+    "wyslij_usprawiedliwienie": {
+      "name": "Send excuse note",
+      "description": "Sends the prepared excuse note to the class tutor as a mobiDziennik message.",
+      "fields": {
+        "podpis": {
+          "name": "Signature",
+          "description": "Parent name at the end of the message."
+        },
+        "entry_id": {
+          "name": "Account",
+          "description": "Optional config entry ID."
+        }
+      }
+    },
+    "odrzuc_usprawiedliwienie": {
+      "name": "Discard excuse note",
+      "description": "Deletes the prepared, unsent excuse note.",
+      "fields": {
+        "entry_id": {
+          "name": "Account",
+          "description": "Optional config entry ID."
+        }
+      }
     }
   }
 }

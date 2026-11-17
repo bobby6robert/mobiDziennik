@@ -35,9 +35,17 @@
     "step": {
       "init": {
         "title": "Ustawienia",
+        "description": "Zaznacz moduły, których potrzebujesz – odznaczone nie są pobierane, a ich czujniki znikają.",
         "data": {
+          "moduly": "Moduły",
           "scan_minutes": "Odświeżanie co (minut)",
+          "plec": "Uczeń to",
+          "podpisy": "Podpisy rodziców (oddzielone przecinkiem)",
           "pulpit": "Utwórz pulpit ponownie"
+        },
+        "data_description": {
+          "podpisy": "Np. „Jan Kowalski, Anna Kowalska”. Używane na końcu usprawiedliwienia. Puste = imię i nazwisko z konta mobiDziennika.",
+          "plec": "Do treści usprawiedliwienia („mojego syna” / „mojej córki”)."
         }
       }
     }
@@ -50,6 +58,44 @@
     "zapisz_strony": {
       "name": "Zapisz strony (diagnostyka)",
       "description": "Zapisuje strony do /config/mobidziennik_debug."
+    },
+    "przygotuj_usprawiedliwienie": {
+      "name": "Przygotuj usprawiedliwienie",
+      "description": "Sprawdza szczegółową frekwencję i przygotowuje treść usprawiedliwienia nieusprawiedliwionych nieobecności i spóźnień. Niczego nie wysyła.",
+      "fields": {
+        "zakres": {
+          "name": "Zakres",
+          "description": "tydzien = ostatni zakończony tydzień, wszystkie = od początku roku szkolnego."
+        },
+        "entry_id": {
+          "name": "Konto",
+          "description": "Opcjonalnie – ID wpisu integracji (gdy jest kilku uczniów)."
+        }
+      }
+    },
+    "wyslij_usprawiedliwienie": {
+      "name": "Wyślij usprawiedliwienie",
+      "description": "Wysyła przygotowane usprawiedliwienie do wychowawcy klasy jako wiadomość w mobiDzienniku.",
+      "fields": {
+        "podpis": {
+          "name": "Podpis",
+          "description": "Imię i nazwisko na końcu wiadomości (domyślnie pierwszy podpis z ustawień)."
+        },
+        "entry_id": {
+          "name": "Konto",
+          "description": "Opcjonalnie – ID wpisu integracji."
+        }
+      }
+    },
+    "odrzuc_usprawiedliwienie": {
+      "name": "Odrzuć usprawiedliwienie",
+      "description": "Usuwa przygotowane, niewysłane usprawiedliwienie.",
+      "fields": {
+        "entry_id": {
+          "name": "Konto",
+          "description": "Opcjonalnie – ID wpisu integracji."
+        }
+      }
     }
   }
 }

@@ -18,7 +18,7 @@ from urllib.parse import urljoin
 import aiohttp
 from bs4 import BeautifulSoup
 
-from .const import USER_AGENT
+from .const import DEFAULT_MODULES, USER_AGENT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ RE_TT_LEFT = re.compile(r'<div class="plansc_godz">.+?</div></div>', re.S)
 RE_TT_CELL = re.compile(
     r'<div class="plansc_cnt_w" style="(.+?)">.*?style="(.+?)"[^>]*?title="(.+?)"[^>]*>\s*(.*?)\s*</div>', re.S
 )
+RE_ACCOUNT = re.compile(r"zalogowany jako\s*<strong>(.+?)</strong>", re.S)
 RE_TAGS = re.compile(r"<[^>]+>")
 RE_ATTACHMENT = re.compile(
     r'href="(https://[^"]+?\.mobidziennik\.pl/[^"]+?&(?:amp;)?zalacznik(?:_rozwiazania)?=[0-9]+)"[^>]*>(.+?)</a>', re.S
@@ -74,6 +75,15 @@ class MobiData:
     exams: list[dict[str, Any]] = field(default_factory=list)
     attendance: list[dict[str, Any]] = field(default_factory=list)
     remarks: list[dict[str, Any]] = field(default_factory=list)
+    calendar: list[dict[str, Any]] = field(default_factory=list)
+    homework: list[dict[str, Any]] = field(default_factory=list)
+    substitutions: list[dict[str, Any]] = field(default_factory=list)
+    stats: dict[str, Any] = field(default_factory=dict)
+    behavior: dict[str, Any] = field(default_factory=dict)
+    announcements: list[dict[str, Any]] = field(default_factory=list)
+    payments: list[dict[str, Any]] = field(default_factory=list)
+    class_name: str = ""
+    student_full: str = ""
     lucky_number: int | None = None
     last_update: str = ""
     errors: list[str] = field(default_factory=list)
@@ -122,6 +132,7 @@ class MobiDziennikClient:
         self._login = login
         self._password = password
         self._logged_in = False
+        self.account_name = ""
 
     # ── HTTP ───────────────────────────────────────────────
     async def _get(self, path: str) -> str:
@@ -142,6 +153,23 @@ class MobiDziennikClient:
                 _LOGGER.debug("mobiDziennik: GET %s nieudane (%s), ponowna próba %d", path, err, attempt + 1)
                 await asyncio.sleep(pause)
         raise MobiConnectionError(f"GET {path}: brak odpowiedzi")
+
+    async def _post(self, path: str, data: Any) -> str:
+        if not self._logged_in:
+            await self.login()
+        url = self.base + path
+        try:
+            async with self._s.post(url, data=data, headers={"User-Agent": USER_AGENT, "Referer": url},
+                                    timeout=aiohttp.ClientTimeout(total=30)) as r:
+                text = await r.text()
+                if r.status >= 400:
+                    raise MobiConnectionError(f"POST {path}: HTTP {r.status}")
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise MobiConnectionError(f"POST {path}: {err}") from err
+        if text.strip() == "Nie jestes zalogowany" or self._is_login_page(text):
+            self._logged_in = False
+            raise MobiConnectionError(f"POST {path}: sesja wygasła")
+        return text
 
     @staticmethod
     def _is_login_page(text: str) -> bool:
@@ -215,12 +243,16 @@ class MobiDziennikClient:
             self._logged_in = False
             await self.login()
             text = await self._get(path)
+        m = RE_ACCOUNT.search(text)
+        if m:
+            self.account_name = _text(m.group(1))
         if "Problemy z wydajnością" in text:
             raise MobiConnectionError("Serwer mobiDziennika zgłasza problemy z wydajnością")
         return text
 
     # ── SYNCHRONIZACJA ───────────────────────────────────
-    async def fetch_all(self, keep_raw: bool = False) -> MobiData:
+    async def fetch_all(self, keep_raw: bool = False, modules: list[str] | None = None) -> MobiData:
+        mods = set(modules if modules is not None else DEFAULT_MODULES)
         out = MobiData(last_update=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         today = date.today()
         monday = today - timedelta(days=today.weekday())
@@ -228,16 +260,26 @@ class MobiDziennikClient:
             monday += timedelta(days=7)
         semester = 1 if today.month >= 9 or today.month == 1 else 2
 
+        wanted = (
+            ("plan", "plan_biezacy", f"/dziennik/planlekcji?typ=podstawowy&tydzien={monday.isoformat()}"),
+            ("plan", "plan_nastepny", f"/dziennik/planlekcji?typ=podstawowy&tydzien={(monday + timedelta(days=7)).isoformat()}"),
+            ("oceny", "oceny", f"/dziennik/oceny?semestr={semester}"),
+            ("wiadomosci", "wiadomosci", "/dziennik/wiadomosci"),
+            ("sprawdziany", "sprawdziany", "/dziennik/sprawdziany"),
+            ("frekwencja", "frekwencja", "/dziennik/obecnosci"),
+            ("uwagi", "uwagi", "/dziennik/uwagi"),
+            ("kalendarz", "kalendarz", "/dziennik/kalendarzklasowy"),
+            ("zadania", "zadania", "/dziennik/zadaniadomowe"),
+            ("zastepstwa", "zastepstwa", "/dziennik/zastepstwa"),
+            ("statystyka", "statystyka", "/dziennik/statystykafrekwencji"),
+            ("zachowanie", "zachowanie", "/dziennik/zachowanie"),
+            ("komunikaty", "komunikaty", "/dziennik/komunikaty"),
+            ("platnosci", "platnosci", "/dziennik/zbiorki"),
+        )
         pages: dict[str, str] = {}
-        for key, path in (
-            ("plan_biezacy", f"/dziennik/planlekcji?typ=podstawowy&tydzien={monday.isoformat()}"),
-            ("plan_nastepny", f"/dziennik/planlekcji?typ=podstawowy&tydzien={(monday + timedelta(days=7)).isoformat()}"),
-            ("oceny", f"/dziennik/oceny?semestr={semester}"),
-            ("wiadomosci", "/dziennik/wiadomosci"),
-            ("sprawdziany", "/dziennik/sprawdziany"),
-            ("frekwencja", "/dziennik/obecnosci"),
-            ("uwagi", "/dziennik/uwagi"),
-        ):
+        for mod, key, path in wanted:
+            if mod not in mods:
+                continue
             try:
                 pages[key] = await self._page(path)
             except MobiAuthError:
@@ -255,36 +297,30 @@ class MobiDziennikClient:
                     out.errors.append(f"{key}: parser {err!r}")
                     out.failed.add(key)
         out.lessons = dedupe_lessons(out.lessons)
-        if "oceny" in pages:
+
+        def run(key: str, fn, attr: str) -> None:
+            if key not in pages:
+                return
             try:
-                out.grades = parse_grades(pages["oceny"])
-            except Exception as err:
-                out.errors.append(f"oceny: parser {err!r}")
-                out.failed.add("oceny")
-        if "wiadomosci" in pages:
-            try:
-                out.messages = parse_messages(pages["wiadomosci"], today)
-            except Exception as err:
-                out.errors.append(f"wiadomosci: parser {err!r}")
-                out.failed.add("wiadomosci")
-        if "sprawdziany" in pages:
-            try:
-                out.exams = parse_exams(pages["sprawdziany"])
-            except Exception as err:
-                out.errors.append(f"sprawdziany: parser {err!r}")
-                out.failed.add("sprawdziany")
-        if "frekwencja" in pages:
-            try:
-                out.attendance = parse_attendance(pages["frekwencja"])
-            except Exception as err:
-                out.errors.append(f"frekwencja: parser {err!r}")
-                out.failed.add("frekwencja")
-        if "uwagi" in pages:
-            try:
-                out.remarks = parse_remarks(pages["uwagi"])
-            except Exception as err:
-                out.errors.append(f"uwagi: parser {err!r}")
-                out.failed.add("uwagi")
+                setattr(out, attr, fn(pages[key]))
+            except Exception as err:  # noqa: BLE001
+                out.errors.append(f"{key}: parser {err!r}")
+                out.failed.add(key)
+
+        run("oceny", parse_grades, "grades")
+        run("wiadomosci", lambda t: parse_messages(t, today), "messages")
+        run("sprawdziany", parse_exams, "exams")
+        run("frekwencja", parse_attendance, "attendance")
+        run("uwagi", parse_remarks, "remarks")
+        run("kalendarz", parse_calendar, "calendar")
+        run("zadania", lambda t: parse_list_page(t, "zadania"), "homework")
+        run("zastepstwa", lambda t: parse_list_page(t, "zastepstwa"), "substitutions")
+        run("statystyka", parse_stats, "stats")
+        run("zachowanie", parse_behavior, "behavior")
+        run("komunikaty", lambda t: parse_list_page(t, "komunikaty"), "announcements")
+        run("platnosci", parse_payments, "payments")
+        if "kalendarz" in pages:
+            out.class_name, out.student_full = parse_class_info(pages["kalendarz"])
 
         for txt in pages.values():
             n = parse_lucky_number(txt)
@@ -294,6 +330,35 @@ class MobiDziennikClient:
         if keep_raw:
             out.raw_pages = pages
         return out
+
+    # ── FREKWENCJA TYGODNIOWA / USPRAWIEDLIWIENIA ──────────
+    async def fetch_week_attendance(self, monday: date) -> list[dict[str, Any]]:
+        """Szczegółowa frekwencja z jednego tygodnia (numery lekcji + symbole . | + s z)."""
+        page = await self._page("/dziennik/frekwencja")
+        uczen = parse_student_id(page)
+        if uczen is None:
+            raise MobiConnectionError("frekwencja: nie znaleziono ucznia")
+        text = await self._post("/dziennik/frekwencja", {"uczen": uczen, "data_poniedzialek": monday.isoformat()})
+        return parse_attendance_week(text)
+
+    async def class_info(self) -> tuple[str, str]:
+        return parse_class_info(await self._page("/dziennik/kalendarzklasowy"))
+
+    async def tutors(self) -> list[dict[str, str]]:
+        """Wychowawcy, do których rodzic może pisać: [{id, nazwisko, klasa}]."""
+        await self._page("/dziennik/dodajwiadomosc")
+        text = await self._post("/dziennik/odbiorcyWiadomosci", {"typ": "8", "odpowiedz": "0", "wiadomosci": "true"})
+        return parse_recipients(text)
+
+    async def send_message(self, recipient_id: str, subject: str, body_html: str) -> None:
+        """Wysyła wiadomość (grupa „Wychowawcy”) i sprawdza, czy jest w „Wysłanych”."""
+        await self._page("/dziennik/dodajwiadomosc")
+        await self._post("/dziennik/dodajwiadomosc", [
+            ("nazwa", subject), ("typodbiorcow", "8"), ("odbiorcy[]", str(recipient_id)), ("tresc", body_html),
+        ])
+        sent = await self._page("/dziennik/wiadomosciwyslane")
+        if htmllib.escape(subject, quote=False) not in sent and subject not in sent:
+            raise MobiConnectionError("Wiadomość nie pojawiła się w „Wysłanych” – sprawdź mobiDziennik")
 
     def message_url(self, msg_id: str) -> str:
         return f"{self.base}/dziennik/wiadodebrana/?id={msg_id}"
@@ -659,3 +724,284 @@ def parse_timetable(html: str, week_start: date) -> list[dict[str, Any]]:
         })
     out.sort(key=lambda x: (x["d"], x["g"]))
     return out
+
+
+# ── NOWE MODUŁY (1.2.0) ─────────────────────────────────
+CAL_COLORS = {
+    "#3366cc": ("informacja", "Informacja"),
+    "#008928": ("wydarzenie", "Wydarzenie klasy"),
+    "#efd459": ("dyzur", "Dyżur"),
+    "#527f3f": ("wlasny", "Własny wpis"),
+    "#ab0001": ("sprawdzian", "Sprawdzian"),
+    "#c54449": ("kartkowka", "Kartkówka"),
+    "#b66000": ("wycieczka", "Wycieczka"),
+    "#590000": ("szkolne", "Kalendarz szkolny"),
+    "#d6d7d9": ("wolne", "Dni wolne"),
+}
+RE_CAL_EVENTS = re.compile(r"events\s*:\s*\[")
+RE_CAL_OBJ = re.compile(r'\{"title".*?\}(?=\s*[,\]])', re.S)
+RE_CLASS = re.compile(r"<h1>\s*(.+?)\s*-\s*kalendarz klasowy\s*<small>\(\s*(.+?)\s*\)</small>", re.S)
+RE_DATE_ISO = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+RE_DATE_PL = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
+WEEKDAYS_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
+
+
+def _content(text: str):
+    soup = BeautifulSoup(text, "html.parser")
+    root = soup.find(id="content") or soup.body or soup
+    for tag in root.find_all(["script", "style", "form"]):
+        tag.decompose()
+    return root
+
+
+def parse_class_info(text: str) -> tuple[str, str]:
+    """(klasa, 'Nazwisko Imię') z nagłówka kalendarza klasowego."""
+    m = RE_CLASS.search(text)
+    if not m:
+        return "", ""
+    return _text(m.group(2)), _text(m.group(1))
+
+
+def parse_calendar(text: str) -> list[dict[str, Any]]:
+    """Wpisy kalendarza klasowego (osadzone w stronie jako lista zdarzeń FullCalendar)."""
+    m = RE_CAL_EVENTS.search(text)
+    if not m:
+        return []
+    import json
+
+    raw: list[dict[str, Any]] = []
+    try:
+        raw, _ = json.JSONDecoder().raw_decode(text, m.end() - 1)
+    except ValueError:
+        for o in RE_CAL_OBJ.finditer(text[m.end():]):
+            try:
+                raw.append(json.loads(o.group(0)))
+            except ValueError:
+                continue
+    _, student = parse_class_info(text)
+    out: list[dict[str, Any]] = []
+    for e in raw:
+        start = str(e.get("start") or "")[:10]
+        if not RE_DATE_ISO.fullmatch(start):
+            continue
+        end = str(e.get("end") or "")[:10] or start
+        if not RE_DATE_ISO.fullmatch(end) or end < start:
+            end = start
+        kind, label = CAL_COLORS.get(str(e.get("color") or "").lower(), ("informacja", "Informacja"))
+        src = str(e.get("id") or "").split(";")
+        if src and src[0] == "sprawdzian" and kind not in ("sprawdzian", "kartkowka"):
+            kind, label = "sprawdzian", "Sprawdzian"
+        if src and src[0] == "wycieczka":
+            kind, label = "wycieczka", "Wycieczka"
+        if src and src[0] == "dzien_wolny":
+            kind, label = "wolne", "Dni wolne"
+        title = _text(str(e.get("title") or ""))
+        comment = _text(str(e.get("comment") or ""))
+        if title.endswith("...") and comment:
+            title, comment = comment, ""
+        if comment == title or (kind == "dyzur" and comment.lower() == "dyżurny"):
+            comment = ""
+        out.append({
+            "id": str(e.get("id") or ""),
+            "start": start,
+            "koniec": end,
+            "tytul": title,
+            "opis": comment,
+            "rodzaj": kind,
+            "rodzaj_nazwa": label,
+            "kolor": str(e.get("color") or ""),
+            "moj": bool(kind == "dyzur" and student and student.lower() in title.lower()),
+        })
+    out.sort(key=lambda x: (x["start"], x["tytul"]))
+    return out
+
+
+def parse_list_page(text: str, kind: str) -> list[dict[str, Any]]:
+    """Strony-listy (zadania, zastępstwa, komunikaty): „Brak …” = pusto, inaczej wiersze tabel lub bloki."""
+    root = _content(text)
+    full = root.get_text(" ", strip=True)
+    if re.search(r"\bBrak (zadań|zaplanowanych zastępstw|komunikatów)\b", full) and not root.select("table.spis tr td"):
+        return []
+    out: list[dict[str, Any]] = []
+    for tr in root.select("table.spis tr"):
+        tds = tr.find_all("td", recursive=False)
+        cols = [re.sub(r"\s+", " ", td.get_text(" ", strip=True)) for td in tds]
+        cols = [c for c in cols if c]
+        if not cols or tr.find("th"):
+            continue
+        txt = " · ".join(cols)
+        out.append({"tekst": txt, "kolumny": cols, "data": _first_date(txt)})
+    if not out:
+        for blk in root.find_all(["div", "p", "li"]):
+            if blk.find(["div", "p", "li", "table"]):
+                continue
+            txt = re.sub(r"\s+", " ", blk.get_text(" ", strip=True))
+            if len(txt) > 15 and not txt.startswith("Brak"):
+                out.append({"tekst": txt, "kolumny": [txt], "data": _first_date(txt)})
+    return out[:50]
+
+
+def _first_date(txt: str) -> str:
+    m = RE_DATE_ISO.search(txt)
+    if m:
+        return m.group(0)
+    m = RE_DATE_PL.search(txt)
+    if m:
+        return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    return ""
+
+
+def _num(s: str) -> float:
+    try:
+        return float(s.replace(",", ".")) if s.strip() else 0.0
+    except ValueError:
+        return 0.0
+
+
+def parse_stats(text: str) -> dict[str, Any]:
+    """Statystyka frekwencji – kolumny „Cały rok” (ob, sp, zw, uspr, nuspr, og, F) dla każdego przedmiotu."""
+    soup = BeautifulSoup(text, "html.parser")
+    table = soup.select_one("table.frekwencja") or soup.select_one("table.spis")
+    out: dict[str, Any] = {"przedmioty": [], "podsumowanie": {}}
+    if table is None:
+        return out
+    for tr in table.find_all("tr"):
+        tds = tr.find_all("td")
+        if len(tds) < 8:
+            continue
+        name = _text(tds[0].get_text())
+        vals = [t.get_text(strip=True) for t in tds[1:]]
+        block = vals[-7:] if len(vals) >= 7 else vals
+        ob, sp, zw, us, nu, og, pr = (_num(v) for v in block)
+        row = {"przedmiot": name, "obecnosci": int(ob), "spoznienia": int(sp), "zwolnienia": int(zw),
+               "usprawiedliwione": int(us), "nieusprawiedliwione": int(nu), "lekcji": int(og),
+               "procent": round(pr, 2) if og else None}
+        if name.lower().startswith("podsumowanie"):
+            out["podsumowanie"] = row
+        elif name:
+            out["przedmioty"].append(row)
+    out["przedmioty"].sort(key=lambda r: (r["procent"] is None, r["procent"] if r["procent"] is not None else 0))
+    return out
+
+
+def parse_behavior(text: str) -> dict[str, Any]:
+    root = _content(text)
+    rows: list[list[str]] = []
+    for tr in root.select("table tr"):
+        cells = tr.find_all(["td", "th"])
+        if len(cells) >= 2:
+            rows.append([_text(cells[0].get_text()), _text(cells[1].get_text()).strip("- ").strip()])
+    current = ""
+    for label in ("Ocena roczna", "Ocena przewidywana roczna", "Ocena śródroczna", "Ocena przewidywana śródroczna"):
+        val = next((v for k, v in rows if k == label and v), "")
+        if val:
+            current = val
+            break
+    return {"wiersze": rows, "ocena": current}
+
+
+def parse_payments(text: str) -> list[dict[str, Any]]:
+    root = _content(text)
+    out: list[dict[str, Any]] = []
+    for table in root.select("table.spis"):
+        h = table.find("h1")
+        if not h or "płatności" not in h.get_text().lower():
+            continue
+        for tr in table.find_all("tr"):
+            tds = tr.find_all("td")
+            cols = [_text(t.get_text()) for t in tds]
+            cols = [c for c in cols if c]
+            if len(cols) < 2 or tr.find("h1"):
+                continue
+            txt = " · ".join(cols)
+            amount = re.search(r"(\d+[.,]\d{2})\s*zł", txt)
+            out.append({"tekst": txt, "kolumny": cols, "kwota": amount.group(1).replace(",", ".") if amount else ""})
+    return out
+
+
+def parse_student_id(text: str) -> str | None:
+    m = re.search(r'name="uczen"[^>]*>\s*<option[^>]*value="(\d+)"', text) or re.search(r'name="uczen"\s+value="(\d+)"', text)
+    if m:
+        return m.group(1)
+    soup = BeautifulSoup(text, "html.parser")
+    sel = soup.find("select", attrs={"name": "uczen"})
+    if sel:
+        opt = sel.find("option", selected=True) or sel.find("option")
+        if opt and opt.get("value"):
+            return opt["value"]
+    return None
+
+
+def parse_attendance_week(text: str) -> list[dict[str, Any]]:
+    """Tydzień ze „Szczegółowej frekwencji”: [{data, dzien, nr, godzina, przedmiot, symbol}]."""
+    soup = BeautifulSoup(text, "html.parser")
+    root = soup.find(id="content") or soup
+    table = root.find("table", class_="spis")
+    if table is None:
+        return []
+    trs = table.find_all("tr", recursive=False) or table.find_all("tr")
+    if len(trs) < 3:
+        return []
+    days: list[tuple[str, int]] = []
+    for td in trs[0].find_all("td")[1:]:
+        m = RE_DATE_ISO.search(td.get_text())
+        if m:
+            days.append((m.group(0), int(td.get("colspan", 1))))
+    slots: list[tuple[int | None, str, str]] = []
+    for td in trs[1].find_all("td")[1:]:
+        a = td.find("a")
+        span = a.find("span") if a else None
+        nr_txt = (a.find(string=True, recursive=False) or "") if a else ""
+        nr = int(re.sub(r"\D", "", nr_txt)) if re.sub(r"\D", "", nr_txt) else None
+        hours = ""
+        subj = ""
+        if span:
+            sp_txt = span.get_text(" ", strip=True)
+            mh = re.match(r"(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})", sp_txt)
+            hours = mh.group(1) if mh else ""
+            subj = " / ".join(_text(s.get_text()) for s in span.find_all("strong"))
+        slots.append((nr, hours, subj))
+    student_row = next((tr for tr in trs[2:] if tr.get("rel")), None) or trs[2]
+    cells = student_row.find_all("td")[1:]
+    out: list[dict[str, Any]] = []
+    idx = 0
+    for day, span_n in days:
+        for _ in range(span_n):
+            if idx >= len(cells):
+                break
+            sym = cells[idx].get_text(strip=True)
+            nr, hours, subj = slots[idx] if idx < len(slots) else (None, "", "")
+            if sym and sym != ".":
+                d = date.fromisoformat(day)
+                out.append({"data": day, "dzien": WEEKDAYS_PL[d.weekday()], "nr": nr, "godzina": hours,
+                            "przedmiot": subj, "symbol": sym})
+            idx += 1
+    return out
+
+
+def parse_recipients(text: str) -> list[dict[str, str]]:
+    soup = BeautifulSoup(text, "html.parser")
+    out: list[dict[str, str]] = []
+    for head in soup.select(".wiadomosci_odbiorcy_klasa_naglowek"):
+        klasa = re.sub(r"[◀▶\s]+$", "", head.get_text(" ", strip=True)).strip()
+        cnt = soup.select_one(f'.wiadomosci_odbiorcy_klasa_cnt[data-klasa="{head.get("data-klasa")}"]')
+        for lab in (cnt.find_all("label") if cnt else []):
+            inp = lab.find("input", attrs={"name": re.compile("odbiorcy")})
+            if inp and inp.get("value"):
+                out.append({"id": inp["value"], "nazwisko": _text(lab.get_text()), "klasa": klasa})
+    if not out:
+        for inp in soup.find_all("input", attrs={"name": re.compile("odbiorcy")}):
+            lab = inp.find_parent("label")
+            out.append({"id": inp.get("value", ""), "nazwisko": _text(lab.get_text()) if lab else "", "klasa": ""})
+    return [r for r in out if r["id"]]
+
+
+def _norm_class(s: str) -> str:
+    return re.sub(r"\s+", "", s or "").lower()
+
+
+def pick_tutor(tutors: list[dict[str, str]], class_name: str) -> dict[str, str] | None:
+    if len(tutors) == 1:
+        return tutors[0]
+    cls = _norm_class(class_name)
+    return next((t for t in tutors if cls and _norm_class(t["klasa"]) == cls), None)

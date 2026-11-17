@@ -15,7 +15,11 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 _LOGGER = logging.getLogger(__name__)
 
 from .api import MobiAuthError, MobiConnectionError, MobiDziennikClient
-from .const import CONF_DASHBOARD, CONF_SCAN_MINUTES, CONF_SERVER, CONF_STUDENT, DEFAULT_SCAN_MINUTES, DOMAIN
+from homeassistant.helpers.selector import (SelectOptionDict, SelectSelector, SelectSelectorConfig,
+                                            SelectSelectorMode, TextSelector)
+
+from .const import (CONF_DASHBOARD, CONF_GENDER, CONF_MODULES, CONF_SCAN_MINUTES, CONF_SERVER, CONF_SIGNATURES,
+                    CONF_STUDENT, DEFAULT_MODULES, DEFAULT_SCAN_MINUTES, DOMAIN, MODULES)
 
 
 def _schema(defaults: dict[str, Any]) -> vol.Schema:
@@ -100,8 +104,16 @@ class MobiOptionsFlow(config_entries.OptionsFlow):
                 self.hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_DASHBOARD: True})
                 await async_reset_dashboard(self.hass, entry.entry_id)
             return self.async_create_entry(title="", data=user_input)
-        current = entry.options.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)
+        o = entry.options
         return self.async_show_form(step_id="init", data_schema=vol.Schema({
-            vol.Required(CONF_SCAN_MINUTES, default=current): vol.All(int, vol.Range(min=10, max=240)),
+            vol.Required(CONF_MODULES, default=list(o.get(CONF_MODULES, DEFAULT_MODULES))): SelectSelector(
+                SelectSelectorConfig(options=[SelectOptionDict(value=k, label=v) for k, v in MODULES.items()],
+                                     multiple=True, mode=SelectSelectorMode.LIST)),
+            vol.Required(CONF_SCAN_MINUTES, default=o.get(CONF_SCAN_MINUTES, DEFAULT_SCAN_MINUTES)):
+                vol.All(vol.Coerce(int), vol.Range(min=10, max=240)),
+            vol.Required(CONF_GENDER, default=o.get(CONF_GENDER, "syn")): SelectSelector(SelectSelectorConfig(
+                options=[SelectOptionDict(value="syn", label="Syn"), SelectOptionDict(value="corka", label="Córka")],
+                mode=SelectSelectorMode.DROPDOWN)),
+            vol.Optional(CONF_SIGNATURES, description={"suggested_value": o.get(CONF_SIGNATURES, "")}): TextSelector(),
             vol.Optional(CONF_DASHBOARD, default=False): bool,
         }))

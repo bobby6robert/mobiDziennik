@@ -15,6 +15,17 @@ Integracja pobiera i udostępnia w Home Assistancie kluczowe informacje szkolne:
 * 📈 **Średnia ocen** – średnia ze wszystkich przedmiotów, średnie przedmiotów, najlepszy i najsłabszy przedmiot (od v1.0.6)
 * 🚫 **Nieusprawiedliwione nieobecności** – licznik do automatyzacji (od v1.0.6)
 
+### Nowości w v1.2.0
+- **Moduły do wyboru** – Ustawienia → Urządzenia i usługi → mobiDziennik → Konfiguruj: zaznacz tylko to, czego potrzebujesz. Odznaczone moduły nie są pobierane, a ich czujniki znikają.
+- **Kalendarz klasowy** – encja `calendar.…_kalendarz_szkolny` (wycieczki, dni wolne, wydarzenia, dyżury, zapowiedzi sprawdzianów – cały rok szkolny), czujnik `…_kalendarz_klasowy` (atrybuty `najblizsze`, `jutro`) i `binary_sensor.…_dyzur` (dyżur ucznia).
+- **Zadania domowe, zastępstwa, komunikaty, płatności (zbiórki), zachowanie** – nowe czujniki i sekcje karty.
+- **Statystyka frekwencji** – `sensor.…_frekwencja_procentowa` (procent obecności z całego roku + każdy przedmiot, lista przedmiotów poniżej 50%).
+- **Usprawiedliwienia** – akcje `mobidziennik.przygotuj_usprawiedliwienie` (zakres: `tydzien` lub `wszystkie`) i `mobidziennik.wyslij_usprawiedliwienie` (podpis). Integracja sama zbiera nieusprawiedliwione nieobecności i spóźnienia z numerami lekcji i układa wiadomość do wychowawcy klasy. **Nic nie wysyła się samo** – dopiero po wywołaniu „Wyślij” (np. przyciskiem w karcie albo w powiadomieniu). Wysłane godziny są zapamiętywane i nie trafią do kolejnego usprawiedliwienia. Zdarzenie `mobidziennik_usprawiedliwienie` (typ: `przygotowane`, `wyslane`, `brak`, `blad`) ułatwia automatyzacje.
+- W ustawieniach: płeć ucznia (do treści „mojego syna / mojej córki”) i podpisy rodziców (np. `Jan Kowalski, Anna Kowalska`).
+
+### Zmiany w v1.1.4
+- Naprawa: lekcje w planie powtarzały się – przy każdym odświeżeniu dokładała się kolejna kopia (lista rosła do dziesiątek tysięcy wpisów i spowalniała HA). Po aktualizacji zrestartuj Home Assistant.
+
 ### Zmiany w v1.1.3
 
 - **Plan lekcji nie znika** przy chwilowym błędzie połączenia (np. problem z DNS): każda strona jest pobierana do 3 razy, a jeśli mimo to się nie uda, zostają ostatnie dobre dane (plan danego tygodnia, oceny, wiadomości, sprawdziany, frekwencja, uwagi) zamiast pustej listy.

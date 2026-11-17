@@ -17,24 +17,25 @@ from homeassistant.util import dt as dt_util
 from . import MobiCoordinator
 from .const import CONF_STUDENT, DOMAIN
 
-HEAVY = frozenset({"lekcje", "oceny", "wiadomosci", "bledy", "sprawdziany", "frekwencja", "uwagi"})
+HEAVY = frozenset({"lekcje", "oceny", "wiadomosci", "bledy", "sprawdziany", "frekwencja", "uwagi", "wydarzenia",
+                   "zadania", "zastepstwa", "przedmioty", "wiersze", "komunikaty", "platnosci", "tresc", "dni",
+                   "historia", "jutro", "najblizsze"})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback) -> None:
     coord: MobiCoordinator = hass.data[DOMAIN][entry.entry_id]
-    add([
-        PlanSensor(coord, entry),
-        MessagesSensor(coord, entry),
-        GradesSensor(coord, entry),
-        LuckySensor(coord, entry),
-        StatusSensor(coord, entry),
-        ExamsSensor(coord, entry),
-        AttendanceSensor(coord, entry),
-        RemarksSensor(coord, entry),
-        NextExamSensor(coord, entry),
-        AverageSensor(coord, entry),
-        UnexcusedSensor(coord, entry),
-    ])
+    mods = set(coord.modules)
+    ents: list[SensorEntity] = [LuckySensor(coord, entry), StatusSensor(coord, entry)]
+    for mod, classes in (
+        ("plan", (PlanSensor,)), ("wiadomosci", (MessagesSensor,)), ("oceny", (GradesSensor, AverageSensor)),
+        ("sprawdziany", (ExamsSensor, NextExamSensor)), ("frekwencja", (AttendanceSensor, UnexcusedSensor)),
+        ("uwagi", (RemarksSensor,)), ("kalendarz", (CalendarListSensor,)), ("zadania", (HomeworkSensor,)),
+        ("zastepstwa", (SubstitutionsSensor,)), ("statystyka", (StatsSensor,)), ("zachowanie", (BehaviorSensor,)),
+        ("komunikaty", (AnnouncementsSensor,)), ("platnosci", (PaymentsSensor,)), ("usprawiedliwienia", (ExcuseSensor,)),
+    ):
+        if mod in mods:
+            ents += [c(coord, entry) for c in classes]
+    add(ents)
 
 
 class _Base(CoordinatorEntity[MobiCoordinator], SensorEntity):
@@ -318,3 +319,143 @@ class UnexcusedSensor(_Base):
 
     def _attrs(self) -> dict[str, Any]:
         return {"last_update": self._d.last_update, **_attendance_counts(self._d.attendance)}
+
+
+def _today() -> str:
+    return dt_util.now().date().isoformat()
+
+
+class CalendarListSensor(_Base):
+    """Kalendarz klasowy jako lista (dla karty i automatyzacji)."""
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "kalendarz", "Kalendarz klasowy", "mdi:calendar-star")
+        self._attr_native_unit_of_measurement = "wydarzeń"
+
+    def _upcoming(self, days: int) -> list[dict[str, Any]]:
+        t = dt_util.now().date()
+        last = (t + timedelta(days=days)).isoformat()
+        return [ev for ev in self._d.calendar if ev["koniec"] >= t.isoformat() and ev["start"] <= last]
+
+    @property
+    def native_value(self) -> int:
+        return len(self._upcoming(7))
+
+    def _attrs(self) -> dict[str, Any]:
+        jutro = (dt_util.now().date() + timedelta(days=1)).isoformat()
+        return {
+            "last_update": self._d.last_update,
+            "klasa": self._d.class_name,
+            "wydarzenia": self._d.calendar,
+            "najblizsze": self._upcoming(30)[:15],
+            "jutro": [ev for ev in self._d.calendar if ev["start"] <= jutro <= ev["koniec"]],
+            "zaczyna_sie_jutro": [ev for ev in self._d.calendar if ev["start"] == jutro],
+        }
+
+
+class _ListSensor(_Base):
+    _src = ""
+    _list_attr = ""
+
+    def _items(self) -> list[dict[str, Any]]:
+        return getattr(self._d, self._src) or []
+
+    @property
+    def native_value(self) -> int:
+        return len(self._items())
+
+    def _attrs(self) -> dict[str, Any]:
+        return {"last_update": self._d.last_update, self._list_attr: self._items()}
+
+
+class HomeworkSensor(_ListSensor):
+    _src, _list_attr = "homework", "zadania"
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "zadania", "Zadania domowe", "mdi:notebook-edit-outline")
+        self._attr_native_unit_of_measurement = "zadań"
+
+
+class SubstitutionsSensor(_ListSensor):
+    _src, _list_attr = "substitutions", "zastepstwa"
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "zastepstwa", "Zastępstwa", "mdi:account-switch-outline")
+        self._attr_native_unit_of_measurement = "zastępstw"
+
+
+class AnnouncementsSensor(_ListSensor):
+    _src, _list_attr = "announcements", "komunikaty"
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "komunikaty", "Komunikaty", "mdi:bullhorn-outline")
+        self._attr_native_unit_of_measurement = "komunikatów"
+
+
+class PaymentsSensor(_ListSensor):
+    _src, _list_attr = "payments", "platnosci"
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "platnosci", "Płatności", "mdi:cash-multiple")
+        self._attr_native_unit_of_measurement = "płatności"
+
+
+class StatsSensor(_Base):
+    """Frekwencja w % (cały rok) + rozbicie na przedmioty."""
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "statystyka", "Frekwencja procentowa", "mdi:percent-circle-outline")
+        self._attr_native_unit_of_measurement = "%"
+
+    @property
+    def native_value(self) -> float | None:
+        return (self._d.stats.get("podsumowanie") or {}).get("procent")
+
+    def _attrs(self) -> dict[str, Any]:
+        st = self._d.stats or {}
+        return {"last_update": self._d.last_update, "podsumowanie": st.get("podsumowanie") or {},
+                "przedmioty": st.get("przedmioty") or [],
+                "ponizej_50": [p["przedmiot"] for p in st.get("przedmioty") or [] if p["procent"] is not None and p["procent"] < 50]}
+
+
+class BehaviorSensor(_Base):
+    def __init__(self, c, e):
+        super().__init__(c, e, "zachowanie", "Zachowanie", "mdi:emoticon-outline")
+
+    @property
+    def native_value(self) -> str:
+        return (self._d.behavior or {}).get("ocena") or "brak"
+
+    def _attrs(self) -> dict[str, Any]:
+        return {"last_update": self._d.last_update, "wiersze": (self._d.behavior or {}).get("wiersze", [])}
+
+
+class ExcuseSensor(_Base):
+    """Przygotowane (jeszcze niewysłane) usprawiedliwienie."""
+
+    def __init__(self, c, e):
+        super().__init__(c, e, "usprawiedliwienie", "Usprawiedliwienie", "mdi:email-edit-outline")
+
+    @property
+    def native_value(self) -> str:
+        return "do_wyslania" if self.coordinator.draft else "brak"
+
+    def _attrs(self) -> dict[str, Any]:
+        d = self.coordinator.draft or {}
+        hist = self.coordinator.saved.get("historia", [])
+        return {
+            "last_update": self._d.last_update,
+            "temat": d.get("temat", ""),
+            "tresc": d.get("tresc", ""),
+            "pozycji": d.get("pozycji", 0),
+            "nieobecnosci": d.get("nieobecnosci", 0),
+            "spoznienia_do_usprawiedliwienia": d.get("spoznienia", 0),
+            "dni": d.get("dni", []),
+            "zakres": d.get("zakres", ""),
+            "przygotowano": d.get("przygotowano", ""),
+            "podpisy": self.coordinator.signatures(),
+            "ostatnio_wyslane": hist[-1] if hist else None,
+            "historia": hist[-10:],
+        }

@@ -3,19 +3,24 @@
  *
  *   type: custom:mobidziennik-card
  *   device: <id urządzenia „mobiDziennik …”>       (w edytorze wybiera się z listy)
- *   sekcje: [plan, sprawdziany, wiadomosci, oceny, frekwencja]   (opcjonalnie, domyślnie wszystkie)
+ *   sekcje: [plan, sprawdziany, wiadomosci, oceny, frekwencja, kalendarz, zadania, statystyka, zachowanie, usprawiedliwienie]
  *   naglowek: true                                  (imię, numerek, średnia, nieprzeczytane)
  *
  * Dodatkowo: kreator pulpitu – gdy przy dodawaniu integracji zaznaczono „Utwórz pulpit”,
  * przeglądarka administratora sama tworzy pulpit „mobiDziennik” z widokiem dla ucznia.
  */
-const MD_VERSION = '1.1.4';
+const MD_VERSION = '1.2.0';
 const MD_SECTIONS = [
   ['plan', 'Plan lekcji'],
   ['sprawdziany', 'Sprawdziany i kartkówki'],
   ['wiadomosci', 'Wiadomości'],
   ['oceny', 'Oceny i średnie'],
   ['frekwencja', 'Frekwencja i uwagi'],
+  ['kalendarz', 'Kalendarz klasowy'],
+  ['zadania', 'Zadania domowe i zastępstwa'],
+  ['statystyka', 'Frekwencja z przedmiotów (%)'],
+  ['zachowanie', 'Zachowanie, komunikaty, płatności'],
+  ['usprawiedliwienie', 'Usprawiedliwienia'],
 ];
 const MD_DAYS = ['niedziela', 'poniedziałek', 'wtorek', 'środa', 'czwartek', 'piątek', 'sobota'];
 const MD_DAYS_SHORT = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'sb'];
@@ -96,11 +101,41 @@ class MobiDziennikCard extends HTMLElement {
     else if (act === 'next') this._dayOffset += 1;
     else if (act === 'today') this._dayOffset = 0;
     else if (act === 'avg') this._allAvg = !this._allAvg;
+    else if (act === 'calpast') this._calPast = !this._calPast;
+    else if (act === 'statall') this._statAll = !this._statAll;
+    else if (act === 'exc-prep' || act === 'exc-all') {
+      this._busy = 'Przygotowuję…'; this._render();
+      this._call('przygotuj_usprawiedliwienie', { zakres: act === 'exc-all' ? 'wszystkie' : 'tydzien' });
+      return;
+    } else if (act === 'exc-send') {
+      const who = a.dataset.podpis || '';
+      if (!window.confirm(`Wysłać usprawiedliwienie do wychowawcy${who ? ` z podpisem „${who}”` : ''}?`)) return;
+      this._busy = 'Wysyłam…'; this._render();
+      this._call('wyslij_usprawiedliwienie', who ? { podpis: who } : {});
+      return;
+    } else if (act === 'exc-drop') {
+      if (!window.confirm('Odrzucić przygotowane usprawiedliwienie?')) return;
+      this._call('odrzuc_usprawiedliwienie', {});
+      return;
+    }
     else if (act === 'more') {
       const ev2 = new Event('hass-more-info', { bubbles: true, composed: true });
       ev2.detail = { entityId: a.dataset.entity };
       this.dispatchEvent(ev2);
       return;
+    }
+    this._render();
+  }
+
+  async _call(service, data) {
+    const ent = mdEntities(this._hass, this._config.device).usprawiedliwienie;
+    const entryId = ent && this._hass.entities[ent.entity_id] && this._hass.entities[ent.entity_id].config_entry_id;
+    try {
+      await this._hass.callService('mobidziennik', service, { ...data, ...(entryId ? { entry_id: entryId } : {}) });
+      this._busy = '';
+    } catch (err) {
+      this._busy = '';
+      this._err = (err && err.message) || String(err);
     }
     this._render();
   }
@@ -117,7 +152,8 @@ class MobiDziennikCard extends HTMLElement {
       else {
         if (this._config.naglowek) body += this._header(hass, e);
         for (const key of this._config.sekcje) {
-          const fn = { plan: this._plan, sprawdziany: this._exams, wiadomosci: this._messages, oceny: this._grades, frekwencja: this._attendance }[key];
+          const fn = { plan: this._plan, sprawdziany: this._exams, wiadomosci: this._messages, oceny: this._grades, frekwencja: this._attendance,
+            kalendarz: this._calendar, zadania: this._homework, statystyka: this._stats, zachowanie: this._misc, usprawiedliwienie: this._excuse }[key];
           if (fn) body += fn.call(this, e);
         }
       }
@@ -301,6 +337,102 @@ class MobiDziennikCard extends HTMLElement {
     }
     return h;
   }
+
+  _calendar(e) {
+    const c = e.kalendarz;
+    if (!c) return '';
+    const all = c.attributes.wydarzenia || [];
+    const today = mdIso(new Date());
+    const list = this._calPast ? all.filter((x) => x.koniec < today).slice(-15).reverse() : all.filter((x) => x.koniec >= today).slice(0, 8);
+    const duty = e.dyzur;
+    let h = this._title('mdi:calendar-star', 'Kalendarz klasowy', c.attributes.klasa ? `<small>${mdEsc(c.attributes.klasa)}</small>` : '');
+    if (duty && duty.state === 'on') h += '<div class="row"><span class="badge warn">Dziś dyżur</span></div>';
+    if (!list.length) h += `<div class="empty">${this._calPast ? 'Brak minionych wpisów.' : 'Brak zaplanowanych wydarzeń.'}</div>`;
+    else {
+      h += '<div class="list">';
+      for (const x of list) {
+        const d = mdParse(x.start);
+        const range = x.koniec !== x.start ? `${mdDM(x.start)}–${mdDM(x.koniec)}` : mdDM(x.start);
+        const diff = mdDayDiff(x.start);
+        const when = x.start <= today && x.koniec >= today ? 'trwa' : diff === 0 ? 'dziś' : diff === 1 ? 'jutro' : diff > 1 ? `za ${diff} dni` : '';
+        h += `<div class="row"><div class="time"><b>${MD_DAYS_SHORT[d.getDay()]}</b>${range}</div>
+          <div class="main"><div class="t"><span class="dot" style="background:${mdEsc(x.kolor || 'var(--primary-color)')}"></span>${mdEsc(x.tytul)}</div>
+          <div class="s">${mdEsc(x.rodzaj_nazwa)}${x.opis ? ` · ${mdEsc(x.opis)}` : ''}</div></div>${when ? `<span class="badge ${when === 'trwa' || when === 'dziś' || when === 'jutro' ? 'warn' : ''}">${when}</span>` : ''}</div>`;
+      }
+      h += '</div>';
+    }
+    h += `<button class="link" data-act="calpast">${this._calPast ? 'Pokaż nadchodzące' : 'Pokaż minione'}</button>`;
+    return h;
+  }
+
+  _simpleList(icon, title, items, emptyTxt) {
+    let h = this._title(icon, title);
+    if (!items.length) return h + `<div class="empty">${emptyTxt}</div>`;
+    h += '<div class="list">';
+    for (const x of items.slice(0, 8)) h += `<div class="row"><div class="main"><div class="t wrap">${mdEsc(x.tekst)}</div></div>${x.kwota ? `<span class="badge warn">${mdEsc(x.kwota)} zł</span>` : ''}</div>`;
+    return h + '</div>';
+  }
+
+  _homework(e) {
+    let h = '';
+    if (e.zadania) h += this._simpleList('mdi:notebook-edit-outline', 'Zadania domowe', e.zadania.attributes.zadania || [], 'Brak zadań domowych.');
+    if (e.zastepstwa) h += this._simpleList('mdi:account-switch-outline', 'Zastępstwa', e.zastepstwa.attributes.zastepstwa || [], 'Brak zaplanowanych zastępstw.');
+    return h;
+  }
+
+  _stats(e) {
+    const s = e.statystyka;
+    if (!s) return '';
+    const sum = s.attributes.podsumowanie || {};
+    const subj = (s.attributes.przedmioty || []).filter((x) => x.procent != null);
+    let h = this._title('mdi:percent-circle-outline', 'Frekwencja z przedmiotów', sum.procent != null ? `<small>razem ${Number(sum.procent).toFixed(1)}%</small>` : '');
+    if (!subj.length) return h + '<div class="empty">Brak danych.</div>';
+    const show = this._statAll ? subj : subj.slice(0, 5);
+    h += '<div class="avgs">';
+    for (const x of show) {
+      const cls = x.procent < 50 ? 'g1' : x.procent < 75 ? 'g2' : x.procent < 90 ? 'g4' : 'g5';
+      h += `<div class="avg"><span class="an">${mdEsc(x.przedmiot)}</span><span class="bar"><i class="${cls}" style="width:${Math.max(4, Math.min(100, x.procent))}%"></i></span><b>${Math.round(x.procent)}%</b></div>`;
+    }
+    if (subj.length > 5) h += `<button class="link" data-act="statall">${this._statAll ? 'Pokaż mniej' : `Pokaż wszystkie (${subj.length})`}</button>`;
+    return h + '</div>';
+  }
+
+  _misc(e) {
+    let h = '';
+    const z = e.zachowanie;
+    if (z) {
+      const rows = (z.attributes.wiersze || []).filter((r) => r[1]);
+      h += this._title('mdi:emoticon-outline', 'Zachowanie', z.state !== 'brak' ? `<small>${mdEsc(z.state)}</small>` : '');
+      if (!rows.length) h += '<div class="empty">Brak ocen zachowania.</div>';
+      else h += '<div class="list">' + rows.map((r) => `<div class="row"><div class="main"><div class="t">${mdEsc(r[0])}</div></div><span class="badge">${mdEsc(r[1])}</span></div>`).join('') + '</div>';
+    }
+    if (e.komunikaty) h += this._simpleList('mdi:bullhorn-outline', 'Komunikaty', e.komunikaty.attributes.komunikaty || [], 'Brak komunikatów.');
+    if (e.platnosci) h += this._simpleList('mdi:cash-multiple', 'Płatności', e.platnosci.attributes.platnosci || [], 'Brak płatności.');
+    return h;
+  }
+
+  _excuse(e) {
+    const u = e.usprawiedliwienie;
+    if (!u) return '';
+    const a = u.attributes;
+    const nu = e.nieusprawiedliwione ? parseInt(e.nieusprawiedliwione.state, 10) || 0 : null;
+    let h = this._title('mdi:email-edit-outline', 'Usprawiedliwienia', nu != null ? `<small>${nu} nieusprawiedliwionych godzin</small>` : '');
+    if (this._err) { h += `<div class="empty" style="color:var(--error-color)">${mdEsc(this._err)}</div>`; this._err = ''; }
+    if (this._busy) return h + `<div class="empty">${mdEsc(this._busy)}</div>`;
+    if (u.state === 'do_wyslania') {
+      h += `<div class="s">${mdEsc(a.temat)} · przygotowano ${mdEsc(a.przygotowano)}</div>`;
+      h += `<pre class="draft">${mdEsc(a.tresc)}\n\nZ poważaniem\n…</pre>`;
+      const sigs = a.podpisy && a.podpisy.length ? a.podpisy : [''];
+      h += '<div class="btns">' + sigs.map((p) => `<button class="btn pri" data-act="exc-send" data-podpis="${mdEsc(p)}">Wyślij${p ? ` – ${mdEsc(p)}` : ''}</button>`).join('') +
+        '<button class="btn" data-act="exc-drop">Odrzuć</button></div>';
+    } else {
+      h += '<div class="empty">Brak przygotowanego usprawiedliwienia.</div>';
+      h += '<div class="btns"><button class="btn" data-act="exc-prep">Z ostatniego tygodnia</button><button class="btn" data-act="exc-all">Wszystkie zaległe</button></div>';
+    }
+    const last = a.ostatnio_wyslane;
+    if (last) h += `<div class="s" style="margin-top:6px">Ostatnio wysłane ${mdEsc(last.wyslano)} do ${mdEsc(last.do)} (${mdEsc(last.podpis)})</div>`;
+    return h;
+  }
 }
 
 const MD_CSS = `
@@ -368,6 +500,10 @@ const MD_CSS = `
   .tile span { font-size:11.5px; color:var(--secondary-text-color); }
   .tile.bad b { color:var(--error-color, #db4437); } .tile.warn b { color:var(--warning-color, #ffa600); }
   .empty { color:var(--secondary-text-color); font-size:14px; padding:6px 0; }
+  .draft { white-space:pre-wrap; font-family:inherit; font-size:13.5px; background:var(--secondary-background-color); border-radius:10px; padding:10px; margin:6px 0; color:var(--primary-text-color); }
+  .btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  .btn { border:1px solid var(--divider-color); background:none; color:var(--primary-text-color); border-radius:999px; padding:6px 14px; font-size:13px; cursor:pointer; }
+  .btn.pri { background:var(--primary-color); color:var(--text-primary-color, #fff); border-color:var(--primary-color); }
 `;
 
 class MobiDziennikCardEditor extends HTMLElement {
@@ -435,7 +571,8 @@ function mdView(p, existing) {
     sections: [
       { type: 'grid', cards: [card(['plan'], true)] },
       { type: 'grid', cards: [card(['sprawdziany']), card(['wiadomosci'])] },
-      { type: 'grid', cards: [card(['oceny']), card(['frekwencja'])] },
+      { type: 'grid', cards: [card(['oceny']), card(['frekwencja']), card(['usprawiedliwienie'])] },
+      { type: 'grid', cards: [card(['kalendarz']), card(['zadania']), card(['statystyka']), card(['zachowanie'])] },
     ],
   };
 }
