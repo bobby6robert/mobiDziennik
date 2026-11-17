@@ -9,7 +9,7 @@
  * Dodatkowo: kreator pulpitu – gdy przy dodawaniu integracji zaznaczono „Utwórz pulpit”,
  * przeglądarka administratora sama tworzy pulpit „mobiDziennik” z widokiem dla ucznia.
  */
-const MD_VERSION = '1.1.2';
+const MD_VERSION = '1.1.4';
 const MD_SECTIONS = [
   ['plan', 'Plan lekcji'],
   ['sprawdziany', 'Sprawdziany i kartkówki'],
@@ -153,7 +153,7 @@ class MobiDziennikCard extends HTMLElement {
   _plan(e) {
     const p = e.plan;
     if (!p) return '';
-    const lessons = p.attributes.lekcje || [];
+    const lessons = (() => { const seen = new Set(); return (p.attributes.lekcje || []).filter((l) => { const k = [l.d, l.g, l.p, l.s, l.n, l.st].join("|"); if (seen.has(k)) return false; seen.add(k); return true; }); })();
     const days = [...new Set(lessons.map((l) => l.d))].sort();
     const today = mdIso(new Date());
     const now = new Date().toTimeString().slice(0, 5);

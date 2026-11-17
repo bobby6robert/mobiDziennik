@@ -15,7 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import MobiAuthError, MobiConnectionError, MobiData, MobiDziennikClient
+from .api import MobiAuthError, MobiConnectionError, MobiData, MobiDziennikClient, dedupe_lessons
 from .const import CONF_SCAN_MINUTES, CONF_SERVER, DEBUG_DIR, DEFAULT_SCAN_MINUTES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class MobiCoordinator(DataUpdateCoordinator[MobiData]):
                 d = date.fromisoformat(l["d"])
                 return d - timedelta(days=d.weekday())
             keep = [l for l in prev.lessons if week(l) in lost]
-            data.lessons = sorted(data.lessons + keep, key=lambda x: (x["d"], x["g"]))
+            data.lessons = sorted(dedupe_lessons(data.lessons + keep), key=lambda x: (x["d"], x["g"]))
         for key, attr in (("oceny", "grades"), ("wiadomosci", "messages"), ("sprawdziany", "exams"),
                           ("frekwencja", "attendance"), ("uwagi", "remarks")):
             if key in data.failed:

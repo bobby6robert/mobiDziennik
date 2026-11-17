@@ -253,7 +253,8 @@ class MobiDziennikClient:
                     out.lessons += parse_timetable(pages[key], start)
                 except Exception as err:
                     out.errors.append(f"{key}: parser {err!r}")
-                out.failed.add(key)
+                    out.failed.add(key)
+        out.lessons = dedupe_lessons(out.lessons)
         if "oceny" in pages:
             try:
                 out.grades = parse_grades(pages["oceny"])
@@ -553,6 +554,19 @@ def parse_remarks(text: str) -> list[dict[str, Any]]:
                 "tresc": _text(cols[2]) if len(cols) > 2 else "",
                 "punkty": _text(cols[3]) if len(cols) > 3 else "",
             })
+    return out
+
+
+def dedupe_lessons(lessons: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Usuwa powtórzone lekcje (ten sam dzień, godzina, przedmiot, sala, nauczyciel, status)."""
+    seen: set[tuple] = set()
+    out: list[dict[str, Any]] = []
+    for l in lessons:
+        k = (l.get("d"), l.get("g"), l.get("p"), l.get("s"), l.get("n"), l.get("st"))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(l)
     return out
 
 

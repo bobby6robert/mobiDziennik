@@ -13,6 +13,6 @@ USER_AGENT = (
 )
 DEBUG_DIR = "mobidziennik_debug"
 
-VERSION = "1.1.2"
+VERSION = "1.1.4"
 CARD_URL = "/mobidziennik_static/mobidziennik-card.js"
 STORE_KEY = "mobidziennik_pulpit"
