@@ -66,12 +66,10 @@ def build_excuse(items: list[dict[str, Any]], gender: str, student_full: str, st
         parts = []
         if kinds["nieobecnosc"]:
             nrs = [_lesson(x) for x in kinds["nieobecnosc"]]
-            parts.append(f"nieobecność na {_join(nrs)} godzinie lekcyjnej" if len(nrs) == 1
-                         else f"nieobecność na {_join(nrs)} godzinach lekcyjnych")
+            parts.append(f"nieobecność na lekcji {nrs[0]}" if len(nrs) == 1 else f"nieobecność na lekcjach {_join(nrs)}")
         if kinds["spoznienie"]:
             nrs = [_lesson(x) for x in kinds["spoznienie"]]
-            parts.append(f"spóźnienie na {_join(nrs)} godzinę lekcyjną" if len(nrs) == 1
-                         else f"spóźnienia na {_join(nrs)} godziny lekcyjne")
+            parts.append(f"spóźnienie na lekcję {nrs[0]}" if len(nrs) == 1 else f"spóźnienia na lekcje {_join(nrs)}")
         lines.append(f"– {d.strftime('%d.%m.%Y')} ({weekday}): " + ", ".join(parts))
     intro = f"Proszę o usprawiedliwienie {what} {child} w dniach:" if len(days) > 1 \
         else f"Proszę o usprawiedliwienie {what} {child} w dniu:"
