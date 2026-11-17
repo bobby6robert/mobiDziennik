@@ -22,7 +22,7 @@ import voluptuous as vol
 from .api import MobiAuthError, MobiConnectionError, MobiData, MobiDziennikClient, dedupe_lessons, pick_tutor
 from .const import (CONF_GENDER, CONF_MODULES, CONF_SCAN_MINUTES, CONF_SERVER, CONF_SIGNATURES, CONF_STUDENT,
                     DEBUG_DIR, DEFAULT_MODULES, DEFAULT_SCAN_MINUTES, DOMAIN)
-from .usprawiedliwienie import build_excuse, excuse_weeks, item_key
+from .usprawiedliwienie import build_excuse, excuse_weeks, item_key, item_kind
 
 _LOGGER = logging.getLogger(__name__)
 MAX_BODIES = 15
@@ -192,7 +192,10 @@ class MobiCoordinator(DataUpdateCoordinator[MobiData]):
                 except MobiConnectionError as err:
                     raise HomeAssistantError(f"mobiDziennik ({monday}): {err}") from err
             sent = set(self.saved.get("wyslane", []))
-            todo = [i for i in items if i["symbol"] in ("|", "s") and item_key(i) not in sent]
+            todo = [i for i in items if item_kind(i["symbol"]) and item_key(i) not in sent]
+            symbols: dict[str, int] = {}
+            for i in items:
+                symbols[i["symbol"]] = symbols.get(i["symbol"], 0) + 1
             student = self.data.student_full if self.data else ""
             if not student:
                 _cls, student = await self.client.class_info()
@@ -200,7 +203,7 @@ class MobiCoordinator(DataUpdateCoordinator[MobiData]):
                 self.saved["szkic"] = None
                 await self._save()
                 self.hass.bus.async_fire(EVENT, {"entry_id": self.entry.entry_id, "typ": "brak", "zakres": zakres})
-                return {"pozycji": 0}
+                return {"pozycji": 0, "symbole": symbols}
             draft = build_excuse(todo, self.entry.options.get(CONF_GENDER, "syn"), student,
                                  self.entry.data.get(CONF_STUDENT, ""))
             draft.update({"zakres": zakres, "przygotowano": dt_now_str(), "klucze": [item_key(i) for i in todo]})
@@ -209,7 +212,7 @@ class MobiCoordinator(DataUpdateCoordinator[MobiData]):
             self.hass.bus.async_fire(EVENT, {"entry_id": self.entry.entry_id, "typ": "przygotowane", "zakres": zakres,
                                              "pozycji": draft["pozycji"], "tresc": draft["tresc"], "temat": draft["temat"],
                                              "podpisy": self.signatures()})
-            return {k: v for k, v in draft.items() if k != "klucze"}
+            return {**{k: v for k, v in draft.items() if k != "klucze"}, "symbole": symbols}
         finally:
             self.busy = False
 

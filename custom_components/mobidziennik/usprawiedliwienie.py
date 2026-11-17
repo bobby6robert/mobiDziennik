@@ -5,6 +5,15 @@ from datetime import date, timedelta
 from typing import Any
 
 
+def item_kind(sym: str) -> str | None:
+    """| = nieobecność nieusprawiedliwiona, s = spóźnienie; + (usprawiedliwiona), z (zwolnienie), . – pomijane."""
+    if "|" in sym:
+        return "nieobecnosc"
+    if "s" in sym.lower():
+        return "spoznienie"
+    return None
+
+
 def item_key(i: dict[str, Any]) -> str:
     return f"{i['data']}|{i.get('nr') or i.get('godzina')}|{i['symbol']}"
 
@@ -44,7 +53,7 @@ def build_excuse(items: list[dict[str, Any]], gender: str, student_full: str, st
     """items: wpisy ze „Szczegółowej frekwencji” z symbolem | (nieobecność) lub s (spóźnienie)."""
     days: dict[str, dict[str, list[dict]]] = {}
     for i in sorted(items, key=lambda x: (x["data"], x.get("nr") or 0)):
-        kind = "spoznienie" if i["symbol"] == "s" else "nieobecnosc"
+        kind = item_kind(i["symbol"]) or "nieobecnosc"
         days.setdefault(i["data"], {"nieobecnosc": [], "spoznienie": []})[kind].append(i)
     has_abs = any(d["nieobecnosc"] for d in days.values())
     has_late = any(d["spoznienie"] for d in days.values())

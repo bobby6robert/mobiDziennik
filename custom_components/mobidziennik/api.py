@@ -338,7 +338,12 @@ class MobiDziennikClient:
         uczen = parse_student_id(page)
         if uczen is None:
             raise MobiConnectionError("frekwencja: nie znaleziono ucznia")
-        text = await self._post("/dziennik/frekwencja", {"uczen": uczen, "data_poniedzialek": monday.isoformat()})
+        # wartości z listy tygodni na stronie (pierwszy tydzień roku zaczyna się np. we wtorek 1.09)
+        opts = re.findall(r'<option[^>]*value="(\d{4}-\d{2}-\d{2})"', page)
+        value = next((o for o in opts if monday <= date.fromisoformat(o) <= monday + timedelta(days=6)), None)
+        if opts and value is None:
+            return []
+        text = await self._post("/dziennik/frekwencja", {"uczen": uczen, "data_poniedzialek": value or monday.isoformat()})
         return parse_attendance_week(text)
 
     async def class_info(self) -> tuple[str, str]:
@@ -740,7 +745,7 @@ CAL_COLORS = {
 }
 RE_CAL_EVENTS = re.compile(r"events\s*:\s*\[")
 RE_CAL_OBJ = re.compile(r'\{"title".*?\}(?=\s*[,\]])', re.S)
-RE_CLASS = re.compile(r"<h1>\s*(.+?)\s*-\s*kalendarz klasowy\s*<small>\(\s*(.+?)\s*\)</small>", re.S)
+RE_CLASS = re.compile(r"<h1>\s*([^<>]+?)\s*-\s*kalendarz klasowy\s*<small>\(\s*([^<>]+?)\s*\)</small>", re.S)
 RE_DATE_ISO = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 RE_DATE_PL = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
 WEEKDAYS_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
