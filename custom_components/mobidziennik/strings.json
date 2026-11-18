@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "mobiDziennik",
-        "description": "Adres szkoły to pierwsza część adresu, np. dla https://demo.mobidziennik.pl wpisz demo.",
+        "description": "Adres szkoły to pierwsza część adresu, np. dla {example_url} wpisz demo.",
         "data": {
           "server": "Adres szkoły (subdomena)",
           "username": "Login lub e-mail",

@@ -67,7 +67,8 @@ class MobiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = err
             else:
                 return self.async_create_entry(title=f"mobiDziennik {user_input[CONF_STUDENT]}", data=user_input)
-        return self.async_show_form(step_id="user", data_schema=_schema(user_input or {}), errors=errors)
+        return self.async_show_form(step_id="user", data_schema=_schema(user_input or {}), errors=errors,
+                                    description_placeholders={"example_url": "https://demo.mobidziennik.pl"})
 
     async def async_step_reauth(self, entry_data: dict[str, Any]):
         return await self.async_step_reauth_confirm()

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "mobiDziennik",
-        "description": "School address is the first part of the URL, e.g., for https://demo.mobidziennik.pl enter demo.",
+        "description": "School address is the first part of the URL, e.g., for {example_url} enter demo.",
         "data": {
           "server": "School address (subdomain)",
           "username": "Login or email",
