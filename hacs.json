@@ -1,5 +1,7 @@
 {
   "name": "mobiDziennik",
   "content_in_root": false,
-  "render_readme": true
+  "render_readme": true,
+  "country": "PL",
+  "homeassistant": "2024.8.0"
 }
