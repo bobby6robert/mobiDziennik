@@ -65,12 +65,18 @@ Integracja pobiera i udostępnia w Home Assistancie kluczowe informacje szkolne:
 
 ## Instalacja przez HACS (Zalecana)
 
-1. Upewnij się, że masz zainstalowany komponent **HACS** w Home Assistancie.
-2. Otwórz HACS w menu Home Assistanta.
-3. Kliknij w trzy kropki w prawym górnym rogu i wybierz **Repozytoria niestandardowe** (Custom repositories).
-4. Wklej adres URL repozytorium: `https://github.com/bobby6robert/mobiDziennik`
-5. Wybierz kategorię: **Integracja** (Integration) i kliknij **Dodaj**.
-6. Wyszukaj integrację `mobiDziennik` w HACS, pobierz ją i **zrestartuj Home Assistanta**.
+mobiDziennik jest w domyślnym katalogu HACS – nie trzeba dodawać repozytorium ręcznie.
+
+1. Otwórz **HACS** w menu Home Assistanta.
+2. Wyszukaj **mobiDziennik**, kliknij **Pobierz** i **zrestartuj Home Assistanta**.
+
+[![Otwórz w HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=bobby6robert&repository=mobiDziennik&category=integration)
+
+<details><summary>Starsza wersja HACS (jako repozytorium niestandardowe)</summary>
+
+HACS → ⋮ → **Repozytoria niestandardowe** → adres `https://github.com/bobby6robert/mobiDziennik`, kategoria **Integracja** → **Dodaj** → wyszukaj `mobiDziennik` i pobierz.
+
+</details>
 
 ---
 
